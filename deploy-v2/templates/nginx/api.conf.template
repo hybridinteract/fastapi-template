@@ -1,0 +1,184 @@
+# API Server Configuration - {{API_DOMAIN}}
+# FastAPI Backend with SSL, Rate Limiting, and Security Headers
+
+upstream api_backend {
+    server api:8000 max_fails=3 fail_timeout=30s;
+    keepalive 32;
+}
+
+# HTTP Server - Redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{API_DOMAIN}};
+
+    # Let's Encrypt ACME Challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+
+    # Redirect all HTTP to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS Server - Main API
+server {
+
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {{API_DOMAIN}};
+
+    # SSL Certificate Configuration
+    ssl_certificate /etc/letsencrypt/live/{{API_DOMAIN}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{API_DOMAIN}}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/{{API_DOMAIN}}/chain.pem;
+
+    # SSL Optimization
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    # Rate Limiting
+    # More lenient limits for modern SPA applications that make multiple requests
+    limit_req zone=api_limit burst=30 nodelay;  # Allow 30 burst requests for page loads
+    limit_req zone=api_burst burst=20 nodelay;  # Allow 20 burst per second
+    limit_conn conn_limit 20;  # Allow 20 concurrent connections
+
+    # Request Size Limits
+    client_max_body_size 10M;
+    client_body_buffer_size 128k;
+
+    # Logging
+    access_log /var/log/nginx/api-access.log main;
+    error_log /var/log/nginx/api-error.log warn;
+
+    # Health Check Endpoint (No Rate Limiting)
+    location /health {
+        proxy_pass http://api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        access_log off;
+    }
+
+    # Documentation Endpoints - Relaxed CSP for Swagger UI
+    location ~ ^/(docs|redoc|openapi.json) {
+        # HTTP Basic Authentication
+        auth_basic "API Documentation";
+        auth_basic_user_file /etc/nginx/auth/.htpasswd;
+        
+        # Override CSP to allow Swagger UI CDN resources
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https://cdn.jsdelivr.net;" always;
+        
+        proxy_pass http://api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Connection "";
+        
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Metrics Endpoint - Internal Only (blocked from public access)
+    location /metrics {
+        return 404;
+    }
+
+    # Grafana Dashboard - Reverse Proxy with Basic Auth
+    location /grafana/ {
+        auth_basic "Grafana Monitoring";
+        auth_basic_user_file /etc/nginx/auth/.htpasswd;
+
+        proxy_pass http://grafana:3000/grafana/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support (for Grafana live updates)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # API Endpoints
+    location / {
+        # CORS is handled entirely by FastAPI using CORS_ORIGINS from .env
+        # Nginx does NOT add CORS headers to avoid duplication
+
+        # Proxy to FastAPI
+        proxy_pass http://api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Connection "";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        # Buffering
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
+        proxy_busy_buffers_size 8k;
+
+        # Error Handling
+        proxy_intercept_errors off;
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
+        proxy_next_upstream_timeout 30s;
+    }
+
+    # Static Files (if any served via nginx)
+    location /static/ {
+        alias /app/static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # Deny access to sensitive files (except .well-known for ACME)
+    location ~ /\.(?!well-known) {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    location ~ /\.env {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+}

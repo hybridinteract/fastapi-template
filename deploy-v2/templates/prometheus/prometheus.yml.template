@@ -1,0 +1,23 @@
+# Prometheus Configuration
+# Scrape metrics from FastAPI application
+# Generated from template - DO NOT EDIT DIRECTLY
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  # FastAPI Application Metrics
+  - job_name: "fastapi"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: "api"
+          environment: "{{ENVIRONMENT}}"
+
+  # Prometheus Self-Monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

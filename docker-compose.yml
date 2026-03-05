@@ -1,0 +1,184 @@
+services:
+  # ==================== PostgreSQL Database ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${APP_NAME:-myapp}_postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_NAME:-myapp}_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # ==================== FastAPI Application ====================
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ${APP_NAME:-myapp}_api
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Object Storage Configuration
+      DO_SPACES_ENDPOINT_URL: ${DO_SPACES_ENDPOINT_URL}
+      DO_SPACES_ACCESS_KEY_ID: ${DO_SPACES_ACCESS_KEY_ID}
+      DO_SPACES_SECRET_ACCESS_KEY: ${DO_SPACES_SECRET_ACCESS_KEY}
+      DO_SPACES_BUCKET_NAME: ${DO_SPACES_BUCKET_NAME}
+      DO_SPACES_REGION: ${DO_SPACES_REGION}
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-10}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app/app:ro
+      - ./logs:/app/logs
+      - ./migrations:/app/migrations
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      uvicorn app.core.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ==================== Celery Worker ====================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ${APP_NAME:-myapp}_celery_worker
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Object Storage Configuration
+      DO_SPACES_ENDPOINT_URL: ${DO_SPACES_ENDPOINT_URL}
+      DO_SPACES_ACCESS_KEY_ID: ${DO_SPACES_ACCESS_KEY_ID}
+      DO_SPACES_SECRET_ACCESS_KEY: ${DO_SPACES_SECRET_ACCESS_KEY}
+      DO_SPACES_BUCKET_NAME: ${DO_SPACES_BUCKET_NAME}
+      DO_SPACES_REGION: ${DO_SPACES_REGION}
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-10}
+    volumes:
+      - ./app:/app/app:ro
+      - ./logs:/app/logs
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    entrypoint: ["/app/docker/celery-worker-entrypoint.sh"]
+    command: >
+      celery -A app.core.background.celery_app:celery_app worker
+      --loglevel=${LOG_LEVEL:-info}
+      --concurrency=4
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.background.celery_app:celery_app inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ==================== Flower Monitoring ====================
+  flower:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ${APP_NAME:-myapp}_flower
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    networks:
+      - app_network
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    entrypoint: ["/app/docker/flower-entrypoint.sh"]
+    command: >
+      celery -A app.core.background.celery_app:celery_app flower
+      --port=5555
+      --broker=redis://redis:6379/0
+      --basic_auth=${FLOWER_USERNAME:-admin}:${FLOWER_PASSWORD:-flower_password}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+# ==================== Networks ====================
+networks:
+  app_network:
+    driver: bridge
+    name: ${APP_NAME:-myapp}_network
+
+# ==================== Volumes ====================
+volumes:
+  postgres_data:
+    name: ${APP_NAME:-myapp}_postgres_data
+  redis_data:
+    name: ${APP_NAME:-myapp}_redis_data

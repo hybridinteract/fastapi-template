@@ -1,0 +1,342 @@
+services:
+  # Nginx Reverse Proxy with SSL
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: {{CONTAINER_PREFIX}}_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/api.conf:/etc/nginx/sites-available/api.conf:ro
+      - ./nginx/auth:/etc/nginx/auth:ro
+      - ../ssl:/etc/nginx/ssl:ro
+      - ../certbot/conf:/etc/letsencrypt:ro
+      - ../certbot/www:/var/www/certbot:ro
+      - {{VOLUME_PREFIX}}_nginx_logs:/var/log/nginx
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      api:
+        condition: service_started
+      grafana:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z localhost 80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+
+  # Certbot for SSL Certificate Management
+  certbot:
+    image: certbot/certbot:v5.1.0
+    container_name: {{CONTAINER_PREFIX}}_certbot
+    restart: unless-stopped
+    volumes:
+      - ../certbot/conf:/etc/letsencrypt
+      - ../certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.1
+
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: {{CONTAINER_PREFIX}}_redis
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - {{VOLUME_PREFIX}}_redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis/redis-password.conf:/usr/local/etc/redis/redis-password.conf:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+
+  # FastAPI Application
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        - ENVIRONMENT=production
+    container_name: {{CONTAINER_PREFIX}}_api
+    restart: unless-stopped
+    command: >
+      gunicorn app.core.main:app
+      --workers {{API_WORKERS}}
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --max-requests 1000
+      --max-requests-jitter 100
+      --timeout 90
+      --graceful-timeout 30
+      --keep-alive 5
+      --preload
+      --forwarded-allow-ips='*'
+      --access-logfile -
+      --error-logfile -
+      --log-level {{LOG_LEVEL}}
+    env_file:
+      - ../.env.production
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - ENABLE_DOCS={{ENABLE_DOCS}}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - {{VOLUME_PREFIX}}_api_uploads:/app/uploads
+      - {{VOLUME_PREFIX}}_api_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 2.0
+
+  # Celery Worker for Background Tasks
+  celery_worker:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        - ENVIRONMENT=production
+    container_name: {{CONTAINER_PREFIX}}_celery_worker
+    restart: unless-stopped
+    entrypoint: ["/app/docker/celery-worker-entrypoint.sh"]
+    command: >
+      celery -A app.core.background.celery_app worker
+      --loglevel={{LOG_LEVEL}}
+      --pool=prefork
+      --concurrency={{CELERY_WORKERS}}
+      --max-tasks-per-child=1000
+      --time-limit=3600
+      --soft-time-limit=3300
+      --queues=default,high_priority,low_priority
+    env_file:
+      - ../.env.production
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - {{VOLUME_PREFIX}}_api_uploads:/app/uploads
+      - {{VOLUME_PREFIX}}_api_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.background.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 2.0
+
+  # Celery Beat for Scheduled Tasks
+  celery_beat:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        - ENVIRONMENT=production
+    container_name: {{CONTAINER_PREFIX}}_celery_beat
+    restart: unless-stopped
+    entrypoint: ["/app/docker/celery-worker-entrypoint.sh"]
+    command: >
+      celery -A app.core.background.celery_app beat
+      --loglevel={{LOG_LEVEL}}
+      --pidfile=/tmp/celerybeat.pid
+      --schedule=/tmp/celerybeat-schedule
+    env_file:
+      - ../.env.production
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - {{VOLUME_PREFIX}}_celery_beat_data:/tmp
+      - {{VOLUME_PREFIX}}_api_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid && kill -0 $(cat /tmp/celerybeat.pid) || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.2
+
+  # Prometheus - Metrics Collector
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: {{CONTAINER_PREFIX}}_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - {{VOLUME_PREFIX}}_prometheus_data:/prometheus
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=/dev/null http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+
+  # Grafana - Metrics Dashboard
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: {{CONTAINER_PREFIX}}_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SERVER_ROOT_URL=https://{{API_DOMAIN}}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    volumes:
+      - {{VOLUME_PREFIX}}_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - {{NETWORK_PREFIX}}_network
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=/dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Resource limits for docker compose (non-Swarm)
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+
+networks:
+  {{NETWORK_PREFIX}}_network:
+    driver: bridge
+    name: {{NETWORK_PREFIX}}_network
+    ipam:
+      config:
+        - subnet: {{NETWORK_SUBNET}}
+
+volumes:
+  {{VOLUME_PREFIX}}_redis_data:
+    driver: local
+    name: {{VOLUME_PREFIX}}_redis_data
+  {{VOLUME_PREFIX}}_celery_beat_data:
+    driver: local
+    name: {{VOLUME_PREFIX}}_celery_beat_data
+  {{VOLUME_PREFIX}}_nginx_logs:
+    driver: local
+    name: {{VOLUME_PREFIX}}_nginx_logs
+  {{VOLUME_PREFIX}}_api_uploads:
+    driver: local
+    name: {{VOLUME_PREFIX}}_api_uploads
+  {{VOLUME_PREFIX}}_api_logs:
+    driver: local
+    name: {{VOLUME_PREFIX}}_api_logs
+  {{VOLUME_PREFIX}}_prometheus_data:
+    driver: local
+    name: {{VOLUME_PREFIX}}_prometheus_data
+  {{VOLUME_PREFIX}}_grafana_data:
+    driver: local
+    name: {{VOLUME_PREFIX}}_grafana_data
+

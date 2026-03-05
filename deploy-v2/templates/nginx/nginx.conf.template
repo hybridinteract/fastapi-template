@@ -1,0 +1,138 @@
+# Nginx Configuration for {{PROJECT_NAME}}
+# Optimized for production deployment with security best practices
+
+user nginx;
+worker_processes auto;
+worker_rlimit_nofile 65535;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 4096;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # Basic Settings
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging Format
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for" '
+                    'rt=$request_time uct="$upstream_connect_time" '
+                    'uht="$upstream_header_time" urt="$upstream_response_time"';
+
+    access_log /var/log/nginx/access.log main buffer=32k flush=5s;
+
+    # Performance Optimization
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    keepalive_requests 100;
+    types_hash_max_size 2048;
+    server_tokens off;
+
+    # Client Settings
+    client_max_body_size 10M;
+    client_body_buffer_size 128k;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 16k;
+    client_body_timeout 30s;
+    client_header_timeout 30s;
+    send_timeout 30s;
+
+    # Gzip Compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/rss+xml
+        application/atom+xml
+        image/svg+xml;
+    gzip_min_length 1000;
+    gzip_disable "msie6";
+
+    # Rate Limiting Zones
+    # API rate limiting: 300 requests per minute per IP (reasonable for SPA)
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=300r/m;
+    # Burst rate limiting: 50 requests per second (handles page load bursts)
+    limit_req_zone $binary_remote_addr zone=api_burst:10m rate=50r/s;
+    # Connection limiting: 20 concurrent connections per IP (SPAs need multiple connections)
+    limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
+
+    # Rate Limiting Status
+    limit_req_status 429;
+    limit_conn_status 429;
+
+    # Proxy Settings
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+    proxy_busy_buffers_size 8k;
+    proxy_temp_file_write_size 8k;
+    proxy_max_temp_file_size 0;
+
+    # Proxy Headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+
+    # Security Headers (Global)
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    # SSL Settings (Global)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_session_tickets off;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+
+    # OCSP Settings
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+
+    # Default Server Block (Catch-all)
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        server_name _;
+
+        # Let's Encrypt ACME Challenge
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+            try_files $uri =404;
+        }
+
+        # Redirect all other HTTP to HTTPS
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # Include Site Configurations
+    include /etc/nginx/sites-available/*.conf;
+}
