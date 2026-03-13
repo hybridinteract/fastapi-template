@@ -88,12 +88,12 @@ app/
 │
 └── <feature>/                     # YOUR domain modules go here
     ├── __init__.py                # Public API exports only
+    ├── dependencies.py            # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module deps)
     ├── models.py                  # SQLAlchemy ORM (or models/ subpackage)
     ├── schemas.py                 # Pydantic models (or schemas/ subpackage)
     ├── crud.py                    # Repository (or crud/ subpackage)
     ├── services.py                # Business logic (or services/ subpackage)
     ├── routes.py                  # HTTP endpoints (or routes/ subpackage)
-    ├── dependencies.py            # Feature-specific DI
     ├── exceptions.py              # Domain-specific errors
     ├── enums.py                   # Domain enums
     └── tasks.py                   # Celery tasks
@@ -138,8 +138,8 @@ Always follow this exact sequence:
 | Functions/methods | `snake_case` | `get_current_user()` |
 | Constants | `UPPER_SNAKE_CASE` | `PERMISSIONS`, `API_V1_PREFIX` |
 | Pydantic schemas | `PascalCase` + intent suffix | `LeadCreate`, `LeadUpdate`, `LeadResponse` |
-| CRUD singletons | `<model>_crud` | `user_crud = UserCRUD(User)` |
-| Service singletons | `<name>_service` | `lead_service = LeadService()` |
+| CRUD instances | `<model>_crud` | `user_crud = UserCRUD(User)` |
+| DI factories | `get_<name>_service` | `get_lead_service()` in `dependencies.py` |
 | Router instances | `<module>_router` | `lead_router = APIRouter(...)` |
 | DB tables | `plural_snake_case` | `users`, `refresh_tokens` |
 | Index names | `ix_<table>_<columns>` | `ix_users_status` |
@@ -185,41 +185,177 @@ class LeadCRUD(CRUDBase[Lead, LeadCreate, LeadUpdate]):
 lead_crud = LeadCRUD(Lead)  # Module-level singleton
 ```
 
-### 2.8 Service Pattern
+### 2.8 Dependency Injection & `dependencies.py` (CRITICAL)
+
+Every module **must** have a `dependencies.py` file. This is the **wiring layer** that makes modules loosely coupled and testable. It defines how CRUD instances are injected into services, how services are injected into routes, and how cross-module dependencies are resolved.
+
+**Why this matters:** Without DI, modules become tightly coupled via direct imports. If `lead/services.py` directly imports `from app.user.crud import user_crud`, then leads and users are permanently entangled. With DI, dependencies are declared as interfaces and injected — making modules independently testable, replaceable, and maintainable.
+
+#### The DI Chain
+
+```
+Route ──Depends()──▶ Service ──Depends()──▶ CRUD ──Depends()──▶ Session
+```
+
+Every layer receives its dependencies through `Depends()`, never through direct module-level imports of singleton instances.
+
+#### Step 1 — CRUD Singletons (unchanged)
 
 ```python
+# app/lead/crud.py
+from app.core.crud import CRUDBase
+
+class LeadCRUD(CRUDBase[Lead, LeadCreate, LeadUpdate]):
+    async def get_by_email(self, session: AsyncSession, email: str) -> Lead | None:
+        result = await session.execute(select(self.model).where(self.model.email == email))
+        return result.scalar_one_or_none()
+
+lead_crud = LeadCRUD(Lead)  # Module-level singleton — but accessed via DI, not direct import
+```
+
+#### Step 2 — Service Receives CRUD via Constructor
+
+```python
+# app/lead/services.py
 class LeadService:
+    def __init__(self, lead_crud: LeadCRUD, user_crud: UserCRUD):
+        self.lead_crud = lead_crud
+        self.user_crud = user_crud  # Cross-module dependency — injected, not imported
+
     async def create_lead(self, session: AsyncSession, data: LeadCreate, current_user: User) -> Lead:
-        # Business validation
-        existing = await lead_crud.get_by_email(session, data.email)
+        existing = await self.lead_crud.get_by_email(session, data.email)
         if existing:
             raise LeadAlreadyExistsError(data.email)
 
-        # Create
-        lead = await lead_crud.create(session, obj_in=data)
+        lead = await self.lead_crud.create(session, obj_in=data)
 
         # Service OWNS the commit
         await session.commit()
         await session.refresh(lead)
         return lead
-
-lead_service = LeadService()
 ```
 
-### 2.9 Route Pattern
+**Key:** The service never imports CRUD singletons at the top of the file. It receives them through its constructor.
+
+#### Step 3 — `dependencies.py` Wires Everything Together
 
 ```python
+# app/lead/dependencies.py
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_session
+from app.lead.crud import lead_crud
+from app.lead.services import LeadService
+from app.user.crud import user_crud  # Cross-module CRUD — imported HERE, not in services
+
+
+def get_lead_service() -> LeadService:
+    """Factory that wires CRUD instances into the service."""
+    return LeadService(lead_crud=lead_crud, user_crud=user_crud)
+```
+
+**This is the ONLY file that knows about cross-module wiring.** If you need to swap `user_crud` for a different implementation (e.g., in tests), you change it in one place.
+
+#### Step 4 — Route Uses `Depends()` for the Service
+
+```python
+# app/lead/routes.py
+from app.lead.dependencies import get_lead_service
+
 @router.post("/", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
 async def create_lead(
     data: LeadCreate,
     _: None = Depends(require_permission("leads:create")),
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session),
+    lead_service: LeadService = Depends(get_lead_service),  # Service injected via DI
 ):
     return await lead_service.create_lead(session, data, current_user)
 ```
 
-### 2.10 Error Handling
+**Routes never instantiate services directly.** Always `Depends(get_<name>_service)`.
+
+#### `dependencies.py` Rules
+
+| Rule | Why |
+|------|-----|
+| Every module has its own `dependencies.py` | Single place to find all wiring for a domain |
+| Cross-module imports happen ONLY in `dependencies.py` | Keeps services/CRUD unaware of other modules |
+| Services receive CRUD via constructor, not global import | Enables testing with mock CRUD, enables swapping implementations |
+| Routes receive services via `Depends()`, not direct import | Consistent DI chain, testable routes |
+| `dependencies.py` contains ONLY factory functions | No business logic, no HTTP logic, no DB queries |
+| Factory functions are named `get_<name>_service` or `get_<name>_crud` | Consistent naming across modules |
+
+#### Cross-Module Dependency Example
+
+When `lead` module needs data from `user` module:
+
+```python
+# app/lead/dependencies.py
+from app.user.crud import user_crud          # ✅ Cross-module import in dependencies.py
+from app.lead.crud import lead_crud
+
+def get_lead_service() -> LeadService:
+    return LeadService(lead_crud=lead_crud, user_crud=user_crud)
+```
+
+```python
+# app/lead/services.py
+class LeadService:
+    def __init__(self, lead_crud: LeadCRUD, user_crud: UserCRUD):
+        self.lead_crud = lead_crud
+        self.user_crud = user_crud           # ✅ Injected, not imported
+
+    async def assign_lead(self, session, lead_id, user_id):
+        user = await self.user_crud.get(session, id=user_id)  # ✅ Uses injected CRUD
+        if not user:
+            raise UserNotFoundError(user_id)
+        # ...
+```
+
+```python
+# WRONG — tight coupling
+# app/lead/services.py
+from app.user.crud import user_crud  # ❌ Direct cross-module import in service
+```
+
+#### Module-Internal Dependencies
+
+For dependencies within the same module (e.g., one service needs another service from the same domain), also use `dependencies.py`:
+
+```python
+# app/lead/dependencies.py
+from app.lead.crud import lead_crud
+from app.lead.services.lead_service import LeadService
+from app.lead.services.lead_query_service import LeadQueryService
+
+def get_lead_service() -> LeadService:
+    return LeadService(lead_crud=lead_crud)
+
+def get_lead_query_service() -> LeadQueryService:
+    return LeadQueryService(lead_crud=lead_crud)
+```
+
+#### Testing Benefit
+
+With this pattern, testing becomes trivial — mock at the DI boundary:
+
+```python
+# tests/test_lead_service.py
+async def test_create_lead():
+    mock_crud = AsyncMock(spec=LeadCRUD)
+    mock_crud.get_by_email.return_value = None
+    mock_crud.create.return_value = fake_lead
+
+    service = LeadService(lead_crud=mock_crud, user_crud=mock_user_crud)
+    result = await service.create_lead(mock_session, lead_data, current_user)
+
+    assert result == fake_lead
+    mock_crud.create.assert_called_once()
+```
+
+### 2.9 Error Handling
 
 ```python
 # app/<feature>/exceptions.py
@@ -236,17 +372,6 @@ class LeadNotFoundError(HTTPException):
 - Define domain exceptions in each module's `exceptions.py`
 - Never raise raw `HTTPException(status_code=500)` from services
 - Global handlers in `app/core/exceptions.py` catch unhandled exceptions
-
-### 2.11 Dependency Injection
-
-```python
-# Standard DI pattern for routes
-async def my_route(
-    session: AsyncSession = Depends(get_session),             # DB session
-    current_user: User = Depends(get_current_active_user),    # Authenticated user
-    _: None = Depends(require_permission("resource:action")), # Permission guard
-):
-```
 
 ### 2.12 Background Tasks (Celery)
 
@@ -575,7 +700,8 @@ Always generate files in dependency order:
 1. Types/schemas/models first
 2. Data access (CRUD / API services) second
 3. Business logic (services / hooks) third
-4. UI/routes last
+4. **`dependencies.py`** — wiring layer (after services, before routes)
+5. UI/routes last
 
 ---
 
@@ -592,6 +718,10 @@ Always generate files in dependency order:
 - NO putting project-specific code in `app/core/`
 - NO forgetting to register models in `alembic_models_import.py`
 - NO forgetting to register routers in `app/apis/v1.py`
+- NO cross-module imports in services — cross-module wiring belongs in `dependencies.py` only
+- NO instantiating services directly in routes — always use `Depends(get_<name>_service)`
+- NO importing CRUD singletons directly in service files — inject via constructor
+- NO creating a module without `dependencies.py` — it is required for every feature module
 
 ### Frontend
 - NO API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
@@ -628,11 +758,12 @@ Always generate files in dependency order:
 □ Generate migration: alembic revision --autogenerate -m "<desc>"
 □ Apply migration: alembic upgrade head
 □ Implement CRUD in crud.py (extend CRUDBase)
-□ Implement service in services.py (owns commit)
+□ Implement service in services.py (receives CRUD via constructor, owns commit)
+□ Create dependencies.py (wire CRUD into service, declare cross-module deps)
 □ Define domain exceptions in exceptions.py
 □ Add permissions in app/user/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
 □ Run seed: python -m app.user.seed
-□ Define routes in routes.py
+□ Define routes in routes.py (inject service via Depends(get_<name>_service))
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
 □ Write tests
@@ -666,7 +797,9 @@ Always generate files in dependency order:
 | Transform data | Pydantic schema (auto) | transformers.ts (manual) |
 | Business logic | Service | — (backend owns logic) |
 | DB operations | CRUD (no commit) | — |
-| Transaction mgmt | Service (commit/rollback) | — |
+| Transaction control | Service (commit/rollback) | — |
+| Dependency wiring | dependencies.py (CRUD→Service, cross-module) | — |
+| DI into routes | `Depends(get_<name>_service)` | — |
 | Cache API data | — | React Query |
 | UI-only state | — | Zustand (no API data) |
 | Auth guard | `Depends(require_permission())` | middleware.ts |
