@@ -2,6 +2,16 @@
 
 > **Purpose:** This document is a system-level constraint file for AI coding assistants (Cursor, Copilot, Claude Code, etc.). Every rule below is a **hard constraint** — never violate them, even if the user's prompt is ambiguous. When in doubt, follow this document over general coding intuition.
 
+### Reference Resources
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready FastAPI starter with auth, RBAC, Celery, caching, storage, and deployment configs. Clone this to start any new backend. |
+| Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical guide for modular monolith architecture with DDD principles. |
+
+
+> **When starting a new backend project:** Clone the template repo above. It includes a complete `user` module (auth + RBAC), `activity` logging, `release_notes`, Celery infrastructure, Redis caching, S3 storage, Prometheus metrics, Docker + deployment configs, and all `app/core/` infrastructure. **Never rebuild these from scratch** — extend what the template provides.
+
 ---
 
 ## Table of Contents
