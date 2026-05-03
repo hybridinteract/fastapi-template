@@ -33,7 +33,7 @@ Usage:
             raise ctx.non_retriable_error("Email service temporarily unavailable")
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Callable, Any, TypeVar, Dict, Optional
 from threading import Lock
@@ -125,7 +125,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time: Optional[datetime] = None
-        self.last_state_change: datetime = datetime.utcnow()
+        self.last_state_change: datetime = datetime.now(timezone.utc)
 
         # Thread safety for concurrent tasks
         self._state_lock = Lock()
@@ -227,7 +227,7 @@ class CircuitBreaker:
         """Handle failed call."""
         with self._state_lock:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
 
             logger.warning(
                 f"Circuit breaker '{self.name}' failure",
@@ -260,7 +260,7 @@ class CircuitBreaker:
         if not self.last_failure_time:
             return True
 
-        elapsed = datetime.utcnow() - self.last_failure_time
+        elapsed = datetime.now(timezone.utc) - self.last_failure_time
         should_reset = elapsed >= timedelta(seconds=self.recovery_timeout)
 
         if should_reset:
@@ -277,7 +277,7 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.success_count = 0
-        self.last_state_change = datetime.utcnow()
+        self.last_state_change = datetime.now(timezone.utc)
 
         logger.info(
             f"Circuit breaker '{self.name}' CLOSED - service recovered",
@@ -287,7 +287,7 @@ class CircuitBreaker:
     def _transition_to_open(self):
         """Transition to OPEN state (service down)."""
         self.state = CircuitState.OPEN
-        self.last_state_change = datetime.utcnow()
+        self.last_state_change = datetime.now(timezone.utc)
 
         logger.error(
             f"Circuit breaker '{self.name}' OPEN - service unavailable",
@@ -299,7 +299,7 @@ class CircuitBreaker:
         """Transition to HALF_OPEN state (testing recovery)."""
         self.state = CircuitState.HALF_OPEN
         self.success_count = 0
-        self.last_state_change = datetime.utcnow()
+        self.last_state_change = datetime.now(timezone.utc)
 
         logger.info(
             f"Circuit breaker '{self.name}' HALF_OPEN - testing recovery",

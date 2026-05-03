@@ -189,9 +189,8 @@ def discover_and_import_models() -> list:
     # Ordered imports to respect dependencies
     # Add your models here in dependency order (base models first)
     ordered_modules = [
-        "app.core.models",              # Base
-        # "app.user.models",            # User (referenced by many)
-        # Add more models as you create modules
+        "app.core.alembic_models_import",   # All models via aggregator
+        # Add more explicit imports here if order matters
     ]
 
     imported = []
@@ -212,7 +211,8 @@ def discover_and_import_models() -> list:
     for item in app_dir.iterdir():
         if item.is_dir() and not item.name.startswith('_'):
             models_file = item / "models.py"
-            if models_file.exists():
+            models_pkg = item / "models" / "__init__.py"
+            if models_file.exists() or models_pkg.exists():
                 module_path = f"app.{item.name}.models"
                 if module_path not in imported:
                     try:

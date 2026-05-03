@@ -67,12 +67,12 @@ def cleanup_expired_task_results(ctx: TaskContext, days_old: int = 2):
     """
     ctx.log_info(f"Starting cleanup of task results older than {days_old} days")
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from app.core.background import celery_app
 
     try:
         # Calculate cutoff timestamp
-        cutoff_time = datetime.utcnow() - timedelta(days=days_old)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_old)
         cutoff_timestamp = cutoff_time.timestamp()
 
         ctx.log_info(f"Cleaning results before {cutoff_time.isoformat()}")
