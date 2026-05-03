@@ -35,4 +35,4 @@ class ActivityLogListResponse(BaseModel):
 class BulkDeleteRequest(BaseModel):
     """Request body for bulk hard delete."""
 
-    ids: list[UUID] = Field(..., min_length=1, max_length=200)
+    ids: list[UUID] = Field(min_length=1, max_length=200)

@@ -10,51 +10,41 @@ Role-Based User Query:
         Restrict access by permission as needed.
 """
 
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.database import get_session
-from app.user.models import User
-from app.user.services.user_service import user_service
+from app.core.database import SessionDep
+from app.user.auth_management.utils import CurrentUserDep
 from app.user.schemas.user_schemas import UserResponse, UserUpdateSelf
-from app.user.auth_management.utils import get_current_user
+from app.user.services.user_service import user_service
 
 router = APIRouter(prefix="/users/me", tags=["users"])
 
 
-# ==================== PROFILE ENDPOINTS ====================
-
-
-@router.get("", response_model=UserResponse)
+@router.get("")
 async def get_my_profile(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> UserResponse:
     """Get current user's profile."""
     return await user_service.get_my_profile(session, current_user.id)
 
 
-@router.patch("", response_model=UserResponse)
+@router.patch("")
 async def update_my_profile(
     update_data: UserUpdateSelf,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> UserResponse:
     """Update current user's own profile (restricted fields only)."""
     return await user_service.update_my_profile(session, current_user.id, update_data)
 
 
-# ==================== ROLE-BASED USER QUERIES ====================
-
-
-@router.get("/by-role/{role}", response_model=list[UserResponse])
+@router.get("/by-role/{role}")
 async def get_users_by_role(
     role: str,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> list[UserResponse]:
     """
     Get all active users for a given role name.
 

@@ -31,6 +31,10 @@
 | Storage | S3-compatible (boto3) |
 | Monitoring | Prometheus |
 | Package Manager | uv |
+| Linting / Formatting | Ruff (with FastAPI rules enabled) |
+| Type Checking | ty |
+| HTTP Client | HTTPX (sync + async) — prefer over Requests |
+| Async utilities | Asyncer — prefer over asyncio / AnyIO directly |
 
 ### Frontend
 | Concern | Technology |
@@ -215,6 +219,51 @@ class LeadCRUD(CRUDBase[Lead, LeadCreate, LeadUpdate]):
 lead_crud = LeadCRUD(Lead)   # module-level singleton
 ```
 
+### Return types (not `response_model`)
+
+Always declare a return type on route functions — Pydantic serialises the response on the Rust side, which is faster and ensures sensitive fields are filtered automatically.
+
+```python
+# ✅ preferred — serialised by Pydantic via return type
+@router.get("/")
+async def list_leads(
+    service: LeadServiceDep,
+    session: SessionDep,
+) -> list[LeadResponse]:
+    return await service.list_leads(session)
+```
+
+Use `response_model=` only when the return annotation cannot express what you want (e.g. returning `Any` while filtering to a specific schema):
+
+```python
+@router.get("/me", response_model=UserPublic)
+async def get_me(...) -> Any:
+    return internal_user_object   # InternalUser has extra secret fields
+```
+
+Never use `ORJSONResponse` or `UJSONResponse` — they are deprecated; Pydantic's Rust serialiser via return types is faster.
+
+### Async vs sync route functions
+
+Use `async def` only when the function body calls actual async code (awaited coroutines, async DB operations, etc.).  
+Use plain `def` — which FastAPI runs in a threadpool — for any blocking I/O or when in doubt.  
+Never run blocking code inside an `async def` function; it will stall the event loop.
+
+```python
+# ✅ async — awaiting an async DB call
+@router.get("/{lead_id}")
+async def get_lead(lead_id: UUID, service: LeadServiceDep, session: SessionDep) -> LeadResponse:
+    return await service.get_lead(session, lead_id)
+
+# ✅ plain def — blocking / sync-only code, runs in threadpool
+@router.get("/export")
+def export_leads_csv(service: LeadServiceDep, session: SessionDep) -> StreamingResponse:
+    data = service.build_csv_sync(session)
+    ...
+```
+
+When you must mix blocking and async code, use **Asyncer** (`asyncify` / `syncify`) instead of raw `asyncio` or `anyio`.
+
 ---
 
 ## 5. Dependency Injection (`dependencies.py`)
@@ -225,40 +274,121 @@ Every module **must** have a `dependencies.py`. It is the single wiring layer �
 Route ──Depends()──▶ Service ──constructor──▶ CRUD ──Depends()──▶ Session
 ```
 
+### `Annotated` type aliases
+
+Always declare dependencies as `Annotated` type aliases — they are re-usable, keep signatures readable, and work correctly in non-FastAPI contexts (tests, scripts).
+
 ```python
-# app/lead/services.py
-class LeadService:
-    def __init__(self, lead_crud: LeadCRUD, user_crud: UserCRUD):
-        self.lead_crud = lead_crud
-        self.user_crud = user_crud   # injected — not imported at module level
+# app/core/database.py
+from typing import Annotated
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def get_session() -> AsyncSession:
+    async with async_session_factory() as session:
+        yield session
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+```
+
+```python
+# app/user/dependencies.py
+from typing import Annotated
+from fastapi import Depends
+from app.user.models import User
+
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 ```
 
 ```python
 # app/lead/dependencies.py  ← the ONLY file that imports across modules
+from typing import Annotated
+from fastapi import Depends
 from app.lead.crud import lead_crud
 from app.user.crud import user_crud   # cross-module import lives here
 
 def get_lead_service() -> LeadService:
     return LeadService(lead_crud=lead_crud, user_crud=user_crud)
+
+LeadServiceDep = Annotated[LeadService, Depends(get_lead_service)]
 ```
 
 ```python
-# app/lead/routes.py
+# app/lead/routes.py — all dependencies via Annotated aliases
 @router.post("/")
 async def create_lead(
     data: LeadCreate,
-    _: None = Depends(require_permission("leads:create")),
-    current_user: User = Depends(get_current_active_user),
-    session: AsyncSession = Depends(get_session),
-    service: LeadService = Depends(get_lead_service),
-):
+    _: Annotated[None, Depends(require_permission("leads:create"))],
+    current_user: CurrentUserDep,
+    session: SessionDep,
+    service: LeadServiceDep,
+) -> LeadResponse:
     return await service.create_lead(session, data, current_user)
 ```
 
+### Service wiring
+
+```python
+# app/lead/services.py
+class LeadService:
+    def __init__(self, lead_crud: LeadCRUD, user_crud: UserCRUD):
+        self.lead_crud = lead_crud
+        self.user_crud = user_crud   # injected — never imported at module level
+```
+
+### Dependencies with `yield` and scope
+
+Use `yield` for dependencies that need cleanup (sessions, file handles).  
+The default scope `"request"` runs cleanup after the response is sent.  
+Use `scope="function"` to run cleanup after response data is generated but **before** the response is sent (useful for pre-send side effects).
+
+```python
+# Default — cleanup after response is sent (most common)
+async def get_session():
+    async with async_session_factory() as session:
+        yield session
+
+# scope="function" — cleanup before response leaves the server
+from fastapi import Depends
+
+def get_audit_writer(scope="function"):
+    writer = AuditWriter()
+    try:
+        yield writer
+    finally:
+        writer.flush()   # runs before response is sent
+```
+
+### Class dependencies
+
+Avoid injecting class instances directly via `Depends(ClassName)`. Instead, create a factory function that returns an instance.
+
+```python
+# ✅ factory function returning a dataclass/instance
+from dataclasses import dataclass
+from typing import Annotated
+from fastapi import Depends
+
+@dataclass
+class QueryParams:
+    offset: int = 0
+    limit: int = 100
+    q: str | None = None
+
+def get_query_params(offset: int = 0, limit: int = 100, q: str | None = None) -> QueryParams:
+    return QueryParams(offset=offset, limit=limit, q=q)
+
+QueryParamsDep = Annotated[QueryParams, Depends(get_query_params)]
+
+# ❌ avoid — class used directly as dependency
+# Annotated[QueryParams, Depends()]   ← do not do this
+```
+
 **Rules:**
+- All dependencies declared as `Annotated` type aliases
 - Cross-module imports happen ONLY in `dependencies.py`
 - Services receive CRUD via constructor — never global import
-- Routes receive services via `Depends(get_<name>_service)` — never direct instantiation
+- Routes receive services via `Dep` alias — never direct instantiation
 - `dependencies.py` contains only factory functions — no business logic, no DB queries
 
 ---
@@ -396,11 +526,23 @@ class LeadListParams(ListParams):
 
 ## 11. API Router Registration
 
+Declare `prefix`, `tags`, and shared `dependencies` on the router itself — not on `include_router()`. This keeps the module self-contained and the aggregation file clean.
+
+```python
+# app/lead/routes.py
+lead_router = APIRouter(
+    prefix="/leads",
+    tags=["Leads"],
+    dependencies=[Depends(require_permission("leads:view"))],  # shared guard
+)
+```
+
 ```python
 # app/apis/v1.py
 router.include_router(auth_router)
 router.include_router(user_router)
-router.include_router(activity_router, prefix="/activity-logs", tags=["Activity Logs"])
+router.include_router(activity_router)
+router.include_router(lead_router)
 # router.include_router(mymodule_router)   ← add new modules here
 ```
 
@@ -449,7 +591,67 @@ Log files: `logs/<APP_NAME>.log` (all, rotating), `logs/<APP_NAME>_errors.log` (
 
 ---
 
-## 15. Frontend Patterns
+## 15. Streaming
+
+### JSON Lines
+
+Declare a return type of `AsyncIterable[Model]` and `yield` items — FastAPI handles the chunked response automatically.
+
+```python
+from collections.abc import AsyncIterable
+
+@router.get("/stream")
+async def stream_leads(session: SessionDep, service: LeadServiceDep) -> AsyncIterable[LeadResponse]:
+    async for lead in service.stream_leads(session):
+        yield lead
+```
+
+### Server-Sent Events (SSE)
+
+Use `response_class=EventSourceResponse` and `yield` Pydantic model instances (auto-serialised as `data:` fields).
+
+```python
+from collections.abc import AsyncIterable
+from fastapi.sse import EventSourceResponse
+
+@router.get("/events", response_class=EventSourceResponse)
+async def lead_events(session: SessionDep) -> AsyncIterable[LeadResponse]:
+    async for lead in watch_leads(session):
+        yield lead
+```
+
+For full SSE control (`event`, `id`, `retry`), yield `ServerSentEvent` instances:
+
+```python
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+
+@router.get("/progress", response_class=EventSourceResponse)
+async def progress_stream() -> AsyncIterable[ServerSentEvent]:
+    yield ServerSentEvent(data={"status": "started"}, event="status", id="1")
+    yield ServerSentEvent(data={"progress": 50}, event="progress", id="2")
+```
+
+Use `raw_data` instead of `data` to send pre-formatted strings without JSON encoding.
+
+### Byte streaming
+
+Subclass `StreamingResponse` with the correct `media_type` and use `yield from` — do not return a `StreamingResponse` instance directly.
+
+```python
+from fastapi.responses import StreamingResponse
+
+class PNGStreamingResponse(StreamingResponse):
+    media_type = "image/png"
+
+@router.get("/image", response_class=PNGStreamingResponse)
+def stream_image() -> PNGStreamingResponse:
+    with open_image() as f:
+        yield from f
+```
+
+---
+
+## 16. Frontend Patterns
 
 ### Data flow
 
@@ -511,7 +713,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 
 ---
 
-## 16. Docker
+## 17. Docker
 
 | Service | Image | Port |
 |---------|-------|------|
@@ -526,7 +728,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 
 ---
 
-## 17. New Feature Checklist
+## 18. New Feature Checklist
 
 ### Backend
 
@@ -563,7 +765,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 
 ---
 
-## 18. Hard Rules
+## 19. Hard Rules
 
 ### Backend — never do
 - Business logic in routes
@@ -578,6 +780,15 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 - Cross-module imports in services — that belongs in `dependencies.py`
 - Instantiate services directly in routes — always `Depends(get_<name>_service)`
 - Create a module without `dependencies.py`
+- Inline `Depends()` in route signatures — declare `Annotated` type aliases instead
+- Use `...` (Ellipsis) as a default in path operations or Pydantic fields — omit the default entirely
+- Use `RootModel` — use plain type annotations with `Annotated` + Pydantic validators
+- Use `ORJSONResponse` or `UJSONResponse` — they are deprecated; use return type annotations
+- Run blocking code inside `async def` route functions — use plain `def` or Asyncer
+- Multiple HTTP methods in a single function (`api_route` with `methods=[...]`) — one function per HTTP operation
+- Set `prefix`/`tags` in `include_router()` when they can be set on the router itself
+- Use `Requests` for outbound HTTP — use HTTPX
+- Use raw `asyncio` or `anyio` to mix sync/async — use Asyncer (`asyncify` / `syncify`)
 
 ### Frontend — never do
 - API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
@@ -597,7 +808,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 
 ---
 
-## 19. What Goes Where
+## 20. What Goes Where
 
 | Question | Answer |
 |----------|--------|

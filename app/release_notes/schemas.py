@@ -15,26 +15,22 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 class ReleaseNoteCreate(BaseModel):
-    """Schema for creating a new release note."""
     version: str = Field(
-        ...,
         min_length=1,
         max_length=50,
         description="Version label (e.g., '1.5.0', 'Feb 2026 Update')",
     )
     title: str = Field(
-        ...,
         min_length=1,
         max_length=255,
         description="Release note title",
     )
     content_md: str = Field(
-        ...,
         min_length=1,
         description="Markdown body of the release note",
     )
     change_type: str = Field(
-        "feature",
+        default="feature",
         description="Type of change: feature, improvement, bugfix, breaking",
     )
 

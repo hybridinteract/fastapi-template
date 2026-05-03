@@ -7,12 +7,13 @@ Provides:
 - Database connection verification
 """
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine
-from sqlalchemy.orm import sessionmaker
+from typing import Annotated, AsyncGenerator
+
+from fastapi import Depends, HTTPException
 from sqlalchemy import text
-from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 import asyncio
-from fastapi import HTTPException
 
 from .models import Base
 from .settings import settings
@@ -101,4 +102,15 @@ async def shutdown_db() -> None:
     logger.info("Database engine disposed")
 
 
-__all__ = ["Base", "get_session", "verify_db_connection", "shutdown_db", "engine", "get_database_url", "async_session_factory"]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+__all__ = [
+    "Base",
+    "get_session",
+    "SessionDep",
+    "verify_db_connection",
+    "shutdown_db",
+    "engine",
+    "get_database_url",
+    "async_session_factory",
+]

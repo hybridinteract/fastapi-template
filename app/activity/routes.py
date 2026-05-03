@@ -1,45 +1,37 @@
 """Activity log admin endpoints."""
 
 from datetime import date, datetime, time, timezone
-from typing import Optional
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_session
+from app.core.database import SessionDep
 from app.user.permission_management import require_permission
-from .crud import activity_log_crud
+from .dependencies import ActivityServiceDep
 from .enums import ActivityAction
 from .schemas import ActivityLogListResponse, BulkDeleteRequest
-from .service import ActivityLogService
 
-router = APIRouter()
-
-_service = ActivityLogService(crud=activity_log_crud)
-
-
-def _get_service() -> ActivityLogService:
-    return _service
-
-
-@router.get(
-    "",
-    response_model=ActivityLogListResponse,
-    summary="List activity logs",
+router = APIRouter(
+    prefix="/activity-logs",
+    tags=["Activity Logs"],
     dependencies=[Depends(require_permission("activity:read_all"))],
 )
+
+
+@router.get("", summary="List activity logs")
 async def list_activity_logs(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
-    actor_id: Optional[UUID] = Query(None, description="Filter by user ID"),
-    actor_name: Optional[str] = Query(None, description="Search by actor name (partial match)"),
-    action: Optional[ActivityAction] = Query(None, description="Filter by action type"),
-    date_from: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
-    date_to: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
-    session: AsyncSession = Depends(get_session),
-    service: ActivityLogService = Depends(_get_service),
-):
+    session: SessionDep,
+    service: ActivityServiceDep,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    actor_id: Annotated[UUID | None, Query(description="Filter by user ID")] = None,
+    actor_name: Annotated[str | None, Query(description="Search by actor name (partial match)")] = None,
+    action: Annotated[ActivityAction | None, Query(description="Filter by action type")] = None,
+    date_from: Annotated[date | None, Query(description="Start date (YYYY-MM-DD)")] = None,
+    date_to: Annotated[date | None, Query(description="End date (YYYY-MM-DD)")] = None,
+) -> ActivityLogListResponse:
     """
     Retrieve a paginated list of activity logs with optional filters.
 
@@ -114,7 +106,6 @@ async def list_activity_logs(
     - **403** — Caller lacks `activity:read_all` permission
     - **422** — Invalid query parameter (e.g. malformed UUID, invalid date)
     """
-    # Convert date to datetime for range filtering
     dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
     dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
 
@@ -130,17 +121,12 @@ async def list_activity_logs(
     )
 
 
-@router.delete(
-    "",
-    status_code=status.HTTP_200_OK,
-    summary="Bulk delete activity logs",
-    dependencies=[Depends(require_permission("activity:read_all"))],
-)
+@router.delete("", status_code=status.HTTP_200_OK, summary="Bulk delete activity logs")
 async def bulk_delete_activity_logs(
     body: BulkDeleteRequest,
-    session: AsyncSession = Depends(get_session),
-    service: ActivityLogService = Depends(_get_service),
-):
+    session: SessionDep,
+    service: ActivityServiceDep,
+) -> dict[str, int]:
     """
     Permanently delete activity logs by IDs (multi-select).
 

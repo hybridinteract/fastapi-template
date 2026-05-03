@@ -23,7 +23,7 @@ router.include_router(user_router)
 router.include_router(user_management_router)
 
 # Utility routers (always included)
-router.include_router(activity_router, prefix="/activity-logs", tags=["Activity Logs"])
+router.include_router(activity_router)
 router.include_router(release_notes_router)
 
 # ──── Include new module routers below ────

@@ -4,11 +4,11 @@ Authentication utilities.
 Provides password hashing, token generation, and user retrieval.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from uuid import UUID
-import secrets
 import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -16,10 +16,10 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.settings import settings
 from app.core.database import get_session
-from ..models import User, UserStatus
+from app.core.settings import settings
 from ..crud import user_crud
+from ..models import User, UserStatus
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -131,14 +131,18 @@ async def get_current_user(
 # Alias for permission_management compatibility
 get_current_user_validated = get_current_user
 
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
 
 async def get_current_active_superuser(
-    current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """Get current superuser."""
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
     return current_user
+
+
+SuperUserDep = Annotated[User, Depends(get_current_active_superuser)]
