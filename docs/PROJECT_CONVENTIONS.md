@@ -1,93 +1,112 @@
-# FastAPI Backend Project Conventions
+# Project Conventions
 
-> Extracted from `salescrm_backend` — a battle-tested reference implementation.
-> Use this as the authoritative guide when starting or scaling any FastAPI + SQLAlchemy project.
+> Authoritative guide for building and scaling modules in this FastAPI + Next.js stack.
+> Applies to AI coding assistants and human developers equally — these are hard constraints.
 
 ---
 
-## 1. Project Structure
+## Reference Resources
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready starter — clone this, never rebuild from scratch |
+| Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical modular monolith + DDD guide |
+
+---
+
+## 1. Tech Stack
+
+### Backend
+| Concern | Technology |
+|---------|-----------|
+| Framework | FastAPI (async) |
+| ORM | SQLAlchemy 2.0 (async) |
+| Database | PostgreSQL via asyncpg |
+| Migrations | Alembic (async) |
+| Validation | Pydantic v2 |
+| Auth | JWT (access + refresh) + RBAC |
+| Caching | Redis |
+| Background Tasks | Celery + Flower |
+| Config | Pydantic Settings (env-based) |
+| Storage | S3-compatible (boto3) |
+| Monitoring | Prometheus |
+| Package Manager | uv |
+
+### Frontend
+| Concern | Technology |
+|---------|-----------|
+| Framework | Next.js (App Router) |
+| Server State | React Query (TanStack Query) |
+| Client State | Zustand (UI-only state) |
+| Styling | Tailwind CSS |
+| Forms | React Hook Form + Zod |
+| Testing | Vitest + Playwright |
+
+---
+
+## 2. Project Structure
 
 ```
 <project_name>/
 ├── app/
-│   ├── __init__.py
-│   ├── core/                        # ✅ Reusable — never project-specific
-│   │   ├── __init__.py
-│   │   ├── main.py                  # FastAPI app factory + lifespan
-│   │   ├── settings.py              # Pydantic BaseSettings configuration
-│   │   ├── database.py              # Async SQLAlchemy engine + session
-│   │   ├── models.py                # Base declarative class
-│   │   ├── crud.py                  # Generic CRUDBase[Model, Create, Update]
+│   ├── core/                        # Shared infrastructure — never project-specific
+│   │   ├── main.py                  # App factory + lifespan
+│   │   ├── settings.py              # Pydantic BaseSettings
+│   │   ├── database.py              # Async engine + session factory
+│   │   ├── models.py                # DeclarativeBase
+│   │   ├── crud/                    # Generic CRUD + pagination helpers
+│   │   │   ├── base.py              # CRUDBase[Model, Create, Update]
+│   │   │   └── helpers.py           # paginated_select(), apply_sorting()
+│   │   ├── schemas.py               # ListParams + SortOrder (list-endpoint base)
 │   │   ├── exceptions.py            # Global exception handlers
 │   │   ├── middleware.py            # CORS, GZip, TrustedHost, timing
-│   │   ├── logging.py               # Rotating file + colored console logging
-│   │   ├── metrics.py               # Prometheus instrumentator
-│   │   ├── utils.py                 # utc_now() and other shared helpers
-│   │   ├── alembic_models_import.py # Single file to import all models for Alembic
+│   │   ├── logging.py               # Logger factory
+│   │   ├── metrics.py               # Prometheus
+│   │   ├── utils.py                 # utc_now(), shared helpers
+│   │   ├── alembic_models_import.py # Single file to register ALL models for Alembic
 │   │   ├── background/              # Celery app + task infrastructure
-│   │   │   ├── celery_app.py
-│   │   │   ├── tasks.py
-│   │   │   └── internals/           # Base task, context, retry, monitoring
-│   │   ├── cache/                   # Redis cache abstraction
-│   │   │   └── cache.py
-│   │   └── object_storage/          # S3-compatible file storage
-│   │       ├── storage.py
-│   │       └── utils.py
+│   │   ├── cache/                   # Redis abstraction
+│   │   └── object_storage/          # S3-compatible storage
 │   │
 │   ├── apis/
 │   │   └── v1.py                    # Aggregates all module routers
 │   │
-│   ├── user/                        # ✅ Reusable — auth + RBAC
-│   │   ├── __init__.py
+│   ├── user/                        # Auth + RBAC (included in template)
 │   │   ├── models.py                # User, Role, Permission, RefreshToken
-│   │   ├── exceptions.py
 │   │   ├── seed.py                  # Idempotent role/permission seeder
-│   │   ├── create_admin.py          # Interactive super-admin CLI
-│   │   ├── auth_management/         # JWT login, refresh, logout
-│   │   ├── permission_management/   # RBAC scoped access helpers
-│   │   ├── crud/                    # user_crud, role_crud, permission_crud, refresh_token_crud
-│   │   ├── schemas/                 # user_schemas, admin_schemas
-│   │   ├── services/                # user_service, admin_service, user_query_service
-│   │   └── routes/                  # user_routes, admin_routes
+│   │   ├── auth_management/         # Login, refresh, logout
+│   │   ├── permission_management/   # RBAC + scoped access
+│   │   ├── crud/, schemas/, services/, routes/
+│   │   └── create_admin.py          # Super-admin CLI
 │   │
-│   ├── activity/                    # ✅ Reusable — append-only audit log
-│   │   ├── models.py
-│   │   ├── routes.py
-│   │   ├── service.py
-│   │   └── crud.py
+│   ├── activity/                    # Append-only audit log (included in template)
+│   ├── release_notes/               # What's New system (included in template)
 │   │
-│   ├── release_notes/               # ✅ Reusable — What's New system
-│   │   ├── models.py
-│   │   ├── routes.py
-│   │   ├── service.py
-│   │   └── crud.py
-│   │
-│   └── <feature>/                   # 🔧 Project-specific feature modules
-│       ├── __init__.py              # Module public API
-│       ├── models/                  # DB models (sub-package if complex)
-│       ├── schemas/                 # Pydantic schemas (sub-package if complex)
-│       ├── crud/                    # CRUD classes (sub-package if complex)
-│       ├── services/                # Business logic (sub-package if complex)
-│       ├── routes/                  # FastAPI routers (sub-package if complex)
-│       ├── dependencies.py          # FastAPI Depends() helpers
-│       ├── exceptions.py            # Module-specific exceptions
-│       ├── enums.py                 # Module-specific enums
-│       ├── permissions.py           # Permission constants for the module
-│       └── tasks.py                 # Celery tasks for the module
+│   └── <feature>/                   # Project-specific domain modules
+│       ├── __init__.py              # Public API exports only
+│       ├── dependencies.py          # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module)
+│       ├── models.py                # SQLAlchemy ORM (or models/ subpackage)
+│       ├── schemas.py               # Pydantic models (or schemas/ subpackage)
+│       ├── crud.py                  # Repository (or crud/ subpackage)
+│       ├── services.py              # Business logic (or services/ subpackage)
+│       ├── routes.py                # HTTP endpoints (or routes/ subpackage)
+│       ├── exceptions.py            # Domain-specific errors
+│       ├── enums.py                 # Domain enums
+│       ├── permissions.py           # Permission constants
+│       └── tasks.py                 # Celery tasks
 │
 ├── migrations/
-│   ├── env.py                       # Alembic async env config
-│   ├── script.py.mako
-│   └── versions/                   # Timestamped migration files
+│   ├── env.py
+│   └── versions/                    # YYYY_MM_DD_HHMM-<rev>_<slug>.py
 │
 ├── docker/
-│   ├── Dockerfile                   # Multi-stage Python build
+│   ├── Dockerfile                   # Multi-stage: builder → runtime (non-root appuser)
 │   ├── docker-entrypoint.sh
 │   ├── celery-worker-entrypoint.sh
 │   └── flower-entrypoint.sh
 │
-├── docs/                            # Module-level documentation
-├── logs/                            # Runtime log files (gitignored)
+├── docs/
+├── logs/                            # Gitignored runtime logs
 ├── alembic.ini
 ├── docker-compose.yml
 ├── pyproject.toml
@@ -95,183 +114,207 @@
 └── README.md
 ```
 
+### Frontend
+```
+src/
+├── app/                             # Next.js App Router
+│   ├── (auth)/                      # Unauthenticated pages
+│   ├── (dashboard)/
+│   │   └── <role>/                  # One folder per user role
+│   │       ├── config.ts            # Nav items, route constants — NO JSX, no hooks
+│   │       ├── layout.tsx
+│   │       └── <feature>/page.tsx
+│   ├── api/                         # Route handlers (BFF layer)
+│   └── globals.css                  # Design tokens — single source of truth
+│
+├── components/
+│   ├── layout/                      # Shell (sidebar, topnav)
+│   ├── providers/                   # Context wrappers — no visual output
+│   ├── shared/                      # Reusable feature components
+│   └── ui/                          # Primitives (Button, Badge, Input)
+│
+├── lib/                             # Business logic — DOMAIN-BASED
+│   ├── api-client.ts                # Singleton HTTP client — stateless, no stored tokens
+│   └── <domain>/
+│       ├── types.ts                 # Backend* (snake_case) + Frontend (camelCase) types
+│       ├── transformers.ts          # snake_case ↔ camelCase — the ONLY place backend fields appear
+│       ├── api.ts                   # Service functions → apiClient → transform → return
+│       ├── hooks.ts                 # React Query hooks
+│       ├── store.ts                 # Zustand — ONLY shared UI state (optional)
+│       └── index.ts                 # Barrel exports
+│
+└── middleware.ts                    # Route protection + API auth injection
+```
+
 ---
 
-## 2. Naming Conventions
+## 3. Naming Conventions
 
-### Files & Directories
+### Backend
 | Type | Convention | Example |
 |------|-----------|---------|
-| Python files | `snake_case.py` | `user_crud.py`, `admin_service.py` |
+| Python files | `snake_case.py` | `user_crud.py`, `lead_service.py` |
 | Module directories | `snake_case/` | `app/lead/`, `app/release_notes/` |
-| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init_models.py` |
-| Docker scripts | `kebab-case.sh` | `celery-worker-entrypoint.sh` |
-
-### Python Identifiers
-| Type | Convention | Example |
-|------|-----------|---------|
 | Classes | `PascalCase` | `UserService`, `LeadCRUD` |
-| Functions/methods | `snake_case` | `get_current_user`, `create_lead` |
-| Constants | `UPPER_SNAKE_CASE` | `ROLES`, `PERMISSIONS`, `API_V1_PREFIX` |
-| Pydantic models | `PascalCase` with suffix | `UserCreate`, `UserUpdate`, `UserResponse` |
-| CRUD instances | `<model>_crud` | `user_crud`, `role_crud` |
-| Service instances | `<service_name>_service` | `user_service`, `lead_service` |
-| Router instances | `<module>_router` | `auth_router`, `user_router`, `lead_router` |
+| Functions/methods | `snake_case` | `get_current_user()`, `create_lead()` |
+| Constants | `UPPER_SNAKE_CASE` | `PERMISSIONS`, `API_V1_PREFIX` |
+| Pydantic schemas | `PascalCase` + intent suffix | `LeadCreate`, `LeadUpdate`, `LeadResponse` |
+| CRUD instances | `<model>_crud` | `user_crud = UserCRUD(User)` |
+| DI factories | `get_<name>_service` | `get_lead_service()` in `dependencies.py` |
+| Router instances | `<module>_router` | `lead_router = APIRouter(...)` |
+| DB tables | `plural_snake_case` | `users`, `refresh_tokens` |
+| Index names | `ix_<table>_<columns>` | `ix_users_status` |
+| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init.py` |
+| Permissions | `resource:action[:scope]` | `leads:create`, `leads:view:all` |
 
-### Database
+### Frontend
 | Type | Convention | Example |
 |------|-----------|---------|
-| Table names | `plural_snake_case` | `users`, `refresh_tokens`, `role_permissions` |
-| Index names | `ix_<table>_<columns>` | `ix_users_status`, `ix_activity_logs_actor_id` |
-| FK constraint | SQLAlchemy default | SQLAlchemy handles naming |
-| Association tables | `<table1>_<table2>` | `user_roles`, `role_permissions` |
-| Enum type names | Keep SQLAlchemy default | Uses class name |
+| Files | `kebab-case.tsx` or `camelCase.ts` | `lead-table.tsx`, `hooks.ts` |
+| Components | `PascalCase` | `LeadTable`, `UserAvatar` |
+| Hooks | `use` prefix | `useLeads()`, `useCreateLead()` |
+| Backend types | `Backend*` prefix | `BackendLead`, `BackendUser` |
 
-### Permissions
+---
+
+## 4. Layered Architecture
+
 ```
-<resource>:<action>          →  "leads:view"
-<resource>:<action>:<scope>  →  "leads:view:all", "leads:view:team"
+Route → Service → CRUD → Model
+```
+
+| Layer | Responsibility | Hard Rules |
+|-------|---------------|------------|
+| **Routes** | Parse HTTP, call service, return response | No business logic. No direct DB queries. Use `Depends()` for everything. |
+| **Services** | Business logic, orchestration | Owns `commit()` / `rollback()`. Never import FastAPI types. |
+| **CRUD** | SQL operations | Never `session.commit()`. Only `add()`, `flush()`, `refresh()`. Extend `CRUDBase`. |
+| **Schemas** | Request/response shapes | Split by intent: `Create`, `Update`, `Response`. |
+| **Models** | Database tables | Pure data containers. No business logic. |
+
+### Transaction ownership
+
+```python
+# ✅ Service commits
+async def create_lead(session, data):
+    lead = await lead_crud.create(session, obj_in=data)
+    await session.commit()   # service owns this
+    return lead
+
+# ❌ CRUD never commits
+async def create(self, session, obj_in):
+    await session.commit()   # NEVER
+```
+
+### CRUDBase pattern
+
+```python
+class LeadCRUD(CRUDBase[Lead, LeadCreate, LeadUpdate]):
+    async def get_by_email(self, session, email: str) -> Lead | None:
+        ...
+
+lead_crud = LeadCRUD(Lead)   # module-level singleton
 ```
 
 ---
 
-## 3. Architecture Patterns
+## 5. Dependency Injection (`dependencies.py`)
 
-### 3.1 Layered Architecture (strict — never skip layers)
+Every module **must** have a `dependencies.py`. It is the single wiring layer — the only file that knows about cross-module imports.
 
 ```
-Route (FastAPI router)
-  └── Service (business logic, transaction boundary)
-        └── CRUD (DB operations, no commit)
-              └── Model (SQLAlchemy ORM)
+Route ──Depends()──▶ Service ──constructor──▶ CRUD ──Depends()──▶ Session
+```
+
+```python
+# app/lead/services.py
+class LeadService:
+    def __init__(self, lead_crud: LeadCRUD, user_crud: UserCRUD):
+        self.lead_crud = lead_crud
+        self.user_crud = user_crud   # injected — not imported at module level
+```
+
+```python
+# app/lead/dependencies.py  ← the ONLY file that imports across modules
+from app.lead.crud import lead_crud
+from app.user.crud import user_crud   # cross-module import lives here
+
+def get_lead_service() -> LeadService:
+    return LeadService(lead_crud=lead_crud, user_crud=user_crud)
+```
+
+```python
+# app/lead/routes.py
+@router.post("/")
+async def create_lead(
+    data: LeadCreate,
+    _: None = Depends(require_permission("leads:create")),
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+    service: LeadService = Depends(get_lead_service),
+):
+    return await service.create_lead(session, data, current_user)
 ```
 
 **Rules:**
-- **Routes** inject dependencies, parse request, call service, return response
-- **Services** own `session.commit()` — never in CRUD or routes
-- **CRUD** uses `session.flush()` + `session.refresh()` — never `commit()`
-- **Models** are pure data containers — no business logic inside models
-
-### 3.2 Transaction Ownership
-
-```python
-# ✅ Correct — service commits
-async def create_user(session: AsyncSession, data: UserCreate) -> User:
-    user = await user_crud.create(session, obj_in=data)
-    await session.commit()          # ← service owns this
-    return user
-
-# ❌ Wrong — CRUD commits
-async def create(self, session, obj_in):
-    ...
-    await session.commit()          # ← NEVER in CRUD
-```
-
-### 3.3 Generic CRUDBase
-
-```python
-class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
-    # Override only what's different
-    async def get_by_email(self, session, email: str) -> User | None:
-        ...
-
-user_crud = UserCRUD(User)   # Module-level singleton
-```
-
-### 3.4 Module Public API (`__init__.py`)
-
-Each module exposes only what consumers need:
-
-```python
-# app/user/__init__.py
-from .models import User
-from .routes import auth_router, user_router, user_management_router
-
-__all__ = ["User", "auth_router", "user_router", "user_management_router"]
-```
+- Cross-module imports happen ONLY in `dependencies.py`
+- Services receive CRUD via constructor — never global import
+- Routes receive services via `Depends(get_<name>_service)` — never direct instantiation
+- `dependencies.py` contains only factory functions — no business logic, no DB queries
 
 ---
 
-## 4. Settings & Configuration
-
-### 4.1 Pydantic Settings Class (`app/core/settings.py`)
-
-- Use `BaseSettings` with `.env` file support
-- Group fields with section comments: `# ==================== Database Settings ====================`
-- Computed values (built from other fields) use `@property`
-- Required secrets have no default — will fail fast on startup:
-  ```python
-  SECRET_KEY: str = Field(..., description="Secret key for signing")
-  ```
-- Validate secrets at class level:
-  ```python
-  @field_validator("SECRET_KEY", "JWT_SECRET_KEY")
-  @classmethod
-  def validate_secret_keys(cls, v: str, info) -> str:
-      if not v or len(v) < 32:
-          raise ValueError(f"{info.field_name} must be at least 32 characters")
-      return v
-  ```
-- Cache settings with `@lru_cache()` — only one instance per process
-
-### 4.2 Environment Variables
-
-All env vars must be documented in `.env.example`:
-```bash
-# ==================== Section Name ====================
-VAR_NAME=default_value     # Inline comment explaining purpose
-```
-
----
-
-## 5. Database & Alembic
-
-### 5.1 Model Conventions
+## 6. Model Standards
 
 ```python
+from app.core.models import Base
+from app.core.utils import utc_now
+
 class MyModel(Base):
-    __tablename__ = "plural_snake_case"
+    __tablename__ = "my_models"
     __table_args__ = (
-        Index('ix_mytable_field', 'field'),   # Always name indexes explicitly
+        Index('ix_my_models_field', 'field'),   # always name indexes explicitly
     )
 
-    # Primary key — always UUID
-    id: Mapped[UUIDType] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    
-    # Timestamps — always timezone=True, always UTC
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
-    
-    # Soft delete pattern
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 ```
 
-### 5.2 Alembic Model Import
+- Always UUID primary keys
+- Always `DateTime(timezone=True)` — store UTC, let frontend convert for display
+- Default: `utc_now` from `app.core.utils` — never `datetime.utcnow()` (deprecated)
 
-`app/core/alembic_models_import.py` — the **single source of truth** for Alembic's autogenerate:
+---
+
+## 7. Settings & Configuration
+
+- `app/core/settings.py` — Pydantic `BaseSettings`, loaded from `.env`
+- Group fields with section comments: `# === Database ===`
+- Required secrets have no default (fail fast): `SECRET_KEY: str = Field(...)`
+- Computed values use `@property`; cache instance with `@lru_cache()`
+- All env vars documented in `.env.example` with inline comments
+
+---
+
+## 8. Database & Alembic
+
+### Alembic model registration
+
+`app/core/alembic_models_import.py` is the single source of truth for autogenerate:
 
 ```python
-# Import Base for metadata
 from app.core.models import Base
-
-# User module
-from app.user.models import User, Role, Permission, RefreshToken, UserRole, RolePermission
-
-# Add every new module here ↓
+from app.user.models import User, Role, Permission, RefreshToken
 from app.activity.models import ActivityLog
 from app.release_notes.models import ReleaseNote
-# from app.mymodule.models import MyModel
+# from app.mymodule.models import MyModel   ← add here
 ```
 
-`migrations/env.py` does `from app.core.alembic_models_import import *` — add models only to the import file, never directly to env.py.
+`migrations/env.py` does `from app.core.alembic_models_import import *` — never add models directly to `env.py`.
 
-### 5.3 Migration File Naming
-
-```
-YYYY_MM_DD_HHMM-<rev>_<description>.py
-2026_02_09_0657-8600ba4ec5f7_user_init_models.py
-```
+### Migration naming
 
 Configured in `alembic.ini`:
 ```ini
@@ -280,143 +323,195 @@ file_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(re
 
 ---
 
-## 6. Authentication & RBAC
+## 9. Authentication & RBAC
 
-### 6.1 Permission Naming
+### Permission naming
 
 ```python
-PERMISSIONS: list[tuple[str, str, str]] = [
+PERMISSIONS = [
     # (resource, action, description)
     ("leads", "view",     "View lead details"),
-    ("leads", "view:all", "View all leads in the system"),
-    ("users", "create",   "Create new user accounts"),
+    ("leads", "view:all", "View all leads"),
 ]
-# Permission name stored in DB: "leads:view", "leads:view:all"
+# Stored as: "leads:view", "leads:view:all"
 ```
 
-### 6.2 Role Definition
+### Seed script (`app/user/seed.py`)
 
-- Roles defined as constants in `user/seed.py`
-- `is_system=True` → cannot be deleted via UI
-- `super_admin` role bypasses ALL permission checks in the system
+- **Idempotent** — only inserts missing data; safe to re-run
+- Runs automatically on startup via `lifespan` in `main.py`
+- `super_admin` bypasses all permission checks
+- `is_system=True` roles cannot be deleted via UI
+- All project-specific roles/permissions defined here — nowhere else
 
-### 6.3 Seed Script (`user/seed.py`)
+### Route permission guard
 
-- **Idempotent** — safe to run multiple times; only inserts missing data
-- Runs automatically on application startup (`lifespan` in `main.py`)
-- Can also run manually: `python -m app.user.seed`
-- Use `dispose_engine=False` when called at startup (engine shared with app)
-- Keeps project-specific roles/permissions ONLY in seed.py
+```python
+@router.get("/")
+async def list_leads(
+    _: None = Depends(require_permission("leads:view")),
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+    service: LeadService = Depends(get_lead_service),
+):
+    ...
+```
 
 ---
 
-## 7. API Router Registration
+## 10. List Endpoints (Filtering, Sorting, Pagination)
 
-### `app/apis/v1.py` — The Router Registry
+Every list endpoint uses this standard flow:
 
-```python
-from fastapi import APIRouter
-
-from app.user.routes import auth_router, user_router, user_management_router
-from app.activity.routes import router as activity_router
-from app.release_notes.routes import router as release_notes_router
-# from app.mymodule.routes import mymodule_router  ← add new modules here
-
-router = APIRouter()
-
-router.include_router(auth_router)
-router.include_router(user_router)
-router.include_router(user_management_router)
-router.include_router(activity_router, prefix="/activity-logs", tags=["Activity Logs"])
-router.include_router(release_notes_router)
-# router.include_router(mymodule_router)
+```
+Route (XxxListParams = Depends())
+  └─ Service (pass-through + business-rule overrides)
+       └─ CRUD.get_list_filtered(session, skip, limit, sort_by, sort_order, …filters)
+            └─ paginated_select → single SQL with COUNT(*) OVER ()
+            └─ Returns (items: list, total: int)
 ```
 
-**Mounting prefix** is applied in `core/main.py`:
+### Required pieces per module
+
+| File | What to add |
+|------|-------------|
+| `enums.py` | `XxxSortField(str, Enum)` |
+| `schemas.py` | `XxxListParams(ListParams)` — override `sort_by` + add filters |
+| `crud.py` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
+| `services.py` | `list_xxx(session, params, …)` — pass-through |
+| `routes.py` | `params: XxxListParams = Depends()` |
+
+```python
+class LeadListParams(ListParams):
+    sort_by: LeadSortField = LeadSortField.CREATED_AT
+    sort_order: SortOrder = SortOrder.DESC
+    search: Optional[str] = None
+    status: Optional[str] = None
+```
+
+- Always append `model.id.desc()` as tiebreaker in `order_clauses` (prevents duplicate rows across pages)
+- Pydantic models are immutable — use a local variable for scope overrides, never mutate `params`
+
+---
+
+## 11. API Router Registration
+
+```python
+# app/apis/v1.py
+router.include_router(auth_router)
+router.include_router(user_router)
+router.include_router(activity_router, prefix="/activity-logs", tags=["Activity Logs"])
+# router.include_router(mymodule_router)   ← add new modules here
+```
+
+Mounted in `core/main.py`:
 ```python
 app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)  # /api/v1
 ```
 
 ---
 
-## 8. Celery Background Tasks
+## 12. Background Tasks (Celery)
 
-### 8.1 Task Location
-
-- Infrastructure (Celery app config, base task class): `app/core/background/`
-- Module-specific tasks: `app/<module>/tasks.py`
-
-### 8.2 Celery App Path
-
-```python
-# Always reference as:
-celery -A app.core.background.celery_app:celery_app worker
-# NOT: app.core.celery_app  (old path — causes import errors)
-```
-
-### 8.3 Async Tasks
-
-Use the async-compatible session from `app/core/background/internals/session.py` — **not** the FastAPI `get_session` dependency — for Celery tasks.
+- Module tasks: `app/<module>/tasks.py`
+- Infrastructure (config, base task): `app/core/background/`
+- Celery reference path: `app.core.background.celery_app:celery_app`
+- Use `app/core/background/internals/session.py` for DB sessions in tasks — not the FastAPI `get_session`
 
 ---
 
-## 9. Exception Handling
-
-### 9.1 Module Exceptions
-
-Each module has its own `exceptions.py` with domain-specific exceptions as `HTTPException` subclasses:
+## 13. Exception Handling
 
 ```python
-# app/lead/exceptions.py
-from fastapi import HTTPException, status
-
+# app/<feature>/exceptions.py
 class LeadNotFoundException(HTTPException):
     def __init__(self, lead_id: str):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Lead {lead_id} not found"
-        )
+        super().__init__(status_code=404, detail=f"Lead {lead_id} not found")
 ```
 
-### 9.2 Global Handlers
-
-`app/core/exceptions.py` registers global handlers on the FastAPI app for:
-- `RequestValidationError` → 422
-- `ValidationError` (Pydantic) → 422
-- `IntegrityError` (SQLAlchemy) → 409
-- `OperationalError` → 503
-- `SQLAlchemyError` → 500
-- `ValueError` → 400
-- `PermissionError` → 403
-- `Exception` (catch-all) → 500
+- Each module defines domain exceptions in `exceptions.py`
+- Never raise raw `HTTPException(500)` from services
+- `app/core/exceptions.py` handles: 422 (validation), 409 (integrity), 503 (operational), 500 (sqlalchemy), 400 (value), 403 (permission), 500 (catch-all)
 
 ---
 
-## 10. Logging
-
-### 10.1 Usage
+## 14. Logging
 
 ```python
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-
 logger.info("User created", extra={"user_id": str(user.id)})
-logger.warning("Slow query detected")
 logger.error("DB write failed", exc_info=True)
 ```
 
-### 10.2 Log Files
-
-- `logs/<APP_NAME>.log` — all logs, rotating by size
-- `logs/<APP_NAME>_errors.log` — errors only, rotating by size
-- Console output colored in DEBUG mode
+Log files: `logs/<APP_NAME>.log` (all, rotating), `logs/<APP_NAME>_errors.log` (errors only)
 
 ---
 
-## 11. Docker Setup
+## 15. Frontend Patterns
 
-### 11.1 Services
+### Data flow
+
+```
+Component → Hook (hooks.ts) → Service (api.ts) → apiClient → Backend
+```
+
+- All requests through `apiClient`. No direct `fetch()` in components.
+- `apiClient` is stateless — never stores tokens. Auth handled by `middleware.ts`.
+- All snake_case → camelCase conversion happens once, in `transformers.ts`.
+- Components never see backend shapes.
+
+### State management
+
+```
+Data from API + interactive?  → React Query
+Data from API, initial load?  → Server Component (RSC)
+Shared UI-only state?         → Zustand
+Local component state?        → useState
+```
+
+Never put API data (`isLoading`, `error`, `items[]`) in Zustand.
+
+### React Query pattern
+
+```typescript
+export const leadKeys = {
+  lists: () => ["leads", "list"] as const,
+  list: (params) => [...leadKeys.lists(), params] as const,
+};
+
+export function useLeads(params) {
+  return useQuery({ queryKey: leadKeys.list(params), queryFn: () => leadApi.list(params), staleTime: 30_000 });
+}
+
+export function useCreateLead() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: leadApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: leadKeys.lists() }) });
+}
+```
+
+### Error handling
+
+All API errors are `AppError` instances (statusCode, message, detail, data). Map 422 responses to field errors. Use `onError` in mutations, not try/catch in components.
+
+### Styling rules
+
+- All tokens in `globals.css`. Use semantic tokens: `text-primary`, `bg-muted`.
+- Never hex colors or `bg-[#f5f5f5]` in component files.
+
+### File size limits
+
+| Type | Max |
+|------|-----|
+| Page component | ~200 lines |
+| Shared component | ~150 lines |
+| Custom hook | ~80 lines |
+| Zustand store | ~50 lines (if more, you're storing server state) |
+
+---
+
+## 16. Docker
 
 | Service | Image | Port |
 |---------|-------|------|
@@ -426,80 +521,93 @@ logger.error("DB write failed", exc_info=True)
 | `celery_worker` | custom Dockerfile | — |
 | `flower` | custom Dockerfile | `${FLOWER_PORT:-5555}` |
 
-### 11.2 Network & Volume Naming
-
-Always prefix with project name:
-```yaml
-networks:
-  <project>_network:
-    name: <project>_network
-
-volumes:
-  <project>_postgres_data:
-    name: <project>_postgres_data
-```
-
-### 11.3 Dockerfile Pattern
-
-Multi-stage build:
-- **Stage 1 (builder)**: `python:3.13-slim` + `uv pip install`
-- **Stage 2 (runtime)**: `python:3.13-slim` + non-root `appuser` (uid 1000)
+- Networks and volumes prefixed with project name: `<project>_network`, `<project>_postgres_data`
+- Dockerfile: multi-stage — builder (`uv pip install`) → runtime (non-root `appuser`, uid 1000)
 
 ---
 
-## 12. What Goes Where (Decision Guide)
+## 17. New Feature Checklist
+
+### Backend
+
+```
+□ Create app/<feature>/ with __init__.py
+□ Define schemas (Create, Update, Response)
+□ Define ORM model
+□ Register model in app/core/alembic_models_import.py
+□ alembic revision --autogenerate -m "<desc>" && alembic upgrade head
+□ Implement CRUD extending CRUDBase
+□ Implement service (receives CRUD via constructor, owns commit)
+□ Create dependencies.py (wire CRUD → service, declare cross-module deps)
+□ Define domain exceptions in exceptions.py
+□ Add permissions in app/user/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
+□ Define routes (inject service via Depends(get_<name>_service))
+□ Register router in app/apis/v1.py
+□ Export public API in __init__.py
+□ Write tests
+```
+
+### Frontend
+
+```
+□ Create lib/<domain>/ folder
+□ types.ts — Backend* (snake_case) + Frontend (camelCase) types
+□ transformers.ts — manual mapping only, no auto-mappers
+□ api.ts — service functions → apiClient → transform → return
+□ hooks.ts — query key factory + useQuery/useMutation
+□ store.ts — ONLY if shared UI state needed (never API data)
+□ index.ts — barrel exports
+□ Page at app/(dashboard)/<role>/<feature>/page.tsx
+□ Add nav item + route constant to role's config.ts
+```
+
+---
+
+## 18. Hard Rules
+
+### Backend — never do
+- Business logic in routes
+- `session.commit()` in CRUD layer
+- `datetime.utcnow()` — use `datetime.now(timezone.utc)`
+- Hardcoded secrets or config values
+- Raw SQL strings — always use SQLAlchemy ORM/Core
+- Skip the service layer (route → CRUD directly)
+- Project-specific code in `app/core/`
+- Forget to register models in `alembic_models_import.py`
+- Forget to register routers in `app/apis/v1.py`
+- Cross-module imports in services — that belongs in `dependencies.py`
+- Instantiate services directly in routes — always `Depends(get_<name>_service)`
+- Create a module without `dependencies.py`
+
+### Frontend — never do
+- API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
+- Direct `fetch()` in components
+- Hex colors in component files — use design tokens
+- Backend `snake_case` fields leaking into components
+- Tokens stored in `apiClient`
+- Deep relative imports (`../../..`) — use `@/` aliases
+- `any` without an explaining comment
+- JSX or hooks in `config.ts`
+- Mixing Server Actions + React Query mutations for the same operation
+
+### Both — never do
+- Files exceeding 200 lines without extracting sub-modules
+- Generate code without reading existing code first
+- Add unrequested features, refactors, or abstractions
+
+---
+
+## 19. What Goes Where
 
 | Question | Answer |
 |----------|--------|
-| Does this apply to every project? | `app/core/` |
-| Is this authentication/user-management? | `app/user/` |
-| Is this an audit trail of events? | `app/activity/` |
-| Is this version change announcements? | `app/release_notes/` |
-| Is this feature-specific business logic? | `app/<feature>/services/` |
-| Does this define what DB rows look like? | `app/<feature>/models/` |
-| Does this define the API contract shape? | `app/<feature>/schemas/` |
-| Does this define who can do what? | `app/<feature>/permissions.py` + `user/seed.py` |
-| Is this a background task? | `app/<feature>/tasks.py` |
-| Does this define reusable FastAPI `Depends()`? | `app/<feature>/dependencies.py` |
-
----
-
-## 13. Adding a New Feature Module
-
-1. Create `app/<feature>/` directory with the standard sub-structure
-2. Add models to `app/core/alembic_models_import.py`
-3. Add permissions to `app/user/seed.py` (PERMISSIONS + ROLE_PERMISSIONS)
-4. Register router in `app/apis/v1.py`
-5. Run `alembic revision --autogenerate -m "<description>"`
-6. Run `alembic upgrade head`
-
----
-
-## 14. Datetime Standards
-
-- **All datetime fields**: `DateTime(timezone=True)` — stores with timezone
-- **Default**: `default=utc_now` (from `app.core.utils`)
-- **Never**: `datetime.utcnow()` — deprecated; use `datetime.now(timezone.utc)`
-- **Frontend handles display timezone conversion** — backend always stores UTC
-
----
-
-## 15. Dependency Injection Patterns
-
-```python
-# ✅ Standard DB session dependency
-async def route(session: AsyncSession = Depends(get_session)):
-    ...
-
-# ✅ Current user dependency
-async def route(current_user: User = Depends(get_current_active_user)):
-    ...
-
-# ✅ Permission guard
-async def route(
-    _: None = Depends(require_permission("leads:view")),
-    current_user: User = Depends(get_current_active_user),
-    session: AsyncSession = Depends(get_session),
-):
-    ...
-```
+| Applies to every project? | `app/core/` |
+| Authentication / user management? | `app/user/` |
+| Audit trail of events? | `app/activity/` |
+| Version change announcements? | `app/release_notes/` |
+| Feature-specific business logic? | `app/<feature>/services/` |
+| DB row definition? | `app/<feature>/models/` |
+| API contract shape? | `app/<feature>/schemas/` |
+| Who can do what? | `app/<feature>/permissions.py` + `user/seed.py` |
+| Background task? | `app/<feature>/tasks.py` |
+| FastAPI `Depends()` wiring? | `app/<feature>/dependencies.py` |
