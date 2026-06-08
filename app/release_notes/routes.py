@@ -19,7 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Path, Query, status
 
 from app.core.database import SessionDep
-from app.user.auth_management.utils import CurrentUserDep, SuperUserDep
+from app.user import CurrentUserDep, SuperUserDep
 from .dependencies import ReleaseNoteServiceDep
 from .schemas import (
     ReleaseNoteCreate,

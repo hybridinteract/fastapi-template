@@ -29,8 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, engine
 from app.core.logging import get_logger
-from app.user.auth_management.utils import get_password_hash
-from app.user.models import User, UserStatus, Role, UserRole
+from app.user.auth.tokens import get_password_hash
+from app.user.enums import UserStatus
+from app.user.permission_management.models import Role
+from app.user.user.models import User, UserRole
 
 logger = get_logger(__name__)
 

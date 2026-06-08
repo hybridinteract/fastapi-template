@@ -295,7 +295,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 # app/user/dependencies.py
 from typing import Annotated
 from fastapi import Depends
-from app.user.models import User
+from app.user.user.models import User
 
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 ```
@@ -305,7 +305,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 from typing import Annotated
 from fastapi import Depends
 from app.lead.crud import lead_crud
-from app.user.crud import user_crud   # cross-module import lives here
+from app.user.user.crud import user_crud   # cross-module import lives here
 
 def get_lead_service() -> LeadService:
     return LeadService(lead_crud=lead_crud, user_crud=user_crud)
@@ -436,7 +436,9 @@ class MyModel(Base):
 
 ```python
 from app.core.models import Base
-from app.user.models import User, Role, Permission, RefreshToken
+from app.user.user.models import User, UserRole
+from app.user.permission_management.models import Permission, Role, RolePermission
+from app.user.auth.models import RefreshToken, OAuthAccount, PhoneOTP
 from app.activity.models import ActivityLog
 from app.release_notes.models import ReleaseNote
 # from app.mymodule.models import MyModel   ← add here

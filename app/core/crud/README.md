@@ -243,7 +243,7 @@ from app.core.database import get_session
 from app.mymodule.schemas import ThingListParams, ThingListResponse
 from app.mymodule.services.thing_service import thing_service
 from app.user.dependencies import get_current_user
-from app.user.models import User
+from app.user import User
 
 router = APIRouter(prefix="/things", tags=["Things"])
 

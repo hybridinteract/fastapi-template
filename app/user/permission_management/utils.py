@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists as sql_exists
 from app.core.database import get_session
 from app.core.logging import get_logger
-from app.user.auth_management.utils import get_current_user_validated
-from app.user.models import User as UserModel, Permission, Role, UserRole, RolePermission
+from app.user.auth.current_user import get_current_user
+from app.user.permission_management.models import Permission, Role, RolePermission
+from app.user.user.models import User as UserModel, UserRole
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,7 @@ class BasePermissionChecker:
 
     async def __call__(
         self,
-        current_user: UserModel = Depends(get_current_user_validated),
+        current_user: UserModel = Depends(get_current_user),
         session: AsyncSession = Depends(get_session)
     ) -> UserModel:
         if await self.is_super_admin(session, current_user.id):

@@ -13,7 +13,9 @@ Convention:
 from app.core.models import Base
 
 # User module models (auth + RBAC)
-from app.user.models import User, Role, Permission, RefreshToken, UserRole, RolePermission
+from app.user.user.models import User, UserRole
+from app.user.permission_management.models import Permission, Role, RolePermission
+from app.user.auth.models import RefreshToken, OAuthAccount, PhoneOTP
 
 # Activity module models (append-only audit log)
 from app.activity.models import ActivityLog
