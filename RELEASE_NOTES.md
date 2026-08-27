@@ -128,6 +128,37 @@ Dependency refresh — every package moved to its latest release. Detail in `doc
 
 ---
 
+## [1.4.0] — 2026-08-27
+
+Defect fixes and the Tier 3 capability work. Detail in `docs/MODERNIZATION.md`.
+
+### Fixed
+
+- 🐞 **Every public file upload raised `AttributeError`.** `object_storage/storage.py` contained two different `StorageService` implementations concatenated (lines 30 and 446) plus two `get_storage()`. Python bound the last one — and *that* half's `_get_public_url()` referenced `settings.spaces_public_url`, which does not exist, so `upload(public=True)` always crashed. Consolidated to one class (833 → 417 lines) keeping the working `S3_PUBLIC_DOMAIN` URL builder and `hasattr`-guarded `seek()` from the dead half, and the settings-driven presigned-URL expiry from the live half
+- 🐞 **Login leaked whether an email was registered.** An unknown email returned before any hashing (0.000 ms) while a known one paid a full Argon2 verification (37.72 ms) — a ~180,000x timing oracle. Login now always performs exactly one verification, against a dummy hash when the account is missing. Measured after: 1.00x
+- 🐞 **Activity log pagination could repeat or drop rows.** The query ordered by `created_at DESC` with no tiebreaker, so logs sharing a timestamp were unstable across pages. Now `ORDER BY <sort>, id DESC` per §10
+- **Google OAuth shipped unusable** — `google-auth` was in no dependency group, so enabling `AUTH_GOOGLE_OAUTH_ENABLED` registered routes that always failed with "Google auth library not installed". Added `[project.optional-dependencies] google = ["google-auth[requests]>=2.57.0"]`; install with `uv sync --extra google`
+
+### Added
+
+- **`.env.example`** — generated from `Settings` and `AuthConfig` so it cannot drift: required block first, then every optional field commented-out with its real default. Also covers `FLOWER_*`, which `docker-compose.yml` consumes but no settings class declares. Verified by booting the app from `.env` alone
+- **Transparent password rehash on login** — `verify_and_update_password()` is now wired in, so a credential still on legacy bcrypt is rewritten as Argon2id on next sign-in. Rides the existing commit in `issue_tokens()`; no extra write
+- **Sorting on the activity log endpoint** — `sort_by` (`created_at` / `action` / `actor_name`) and `sort_order`, rendered as typed dropdowns in OpenAPI
+- **`PROJECT_CONVENTIONS.md` §5 "Annotated for request parameters"** — covers `Query`/`Path`/`Header`/`Cookie`/`Form`/`File`, not just `Depends`
+
+### Changed
+
+- **`app/activity/` is now the §10 reference implementation** — `ActivityListParams(ListParams)` bound with `Annotated[..., Query()]`, `get_list_filtered()` using the shared `paginated_select()` helper instead of a hand-rolled window count, and a route signature that drops from nine parameters to three. §10 now points at it
+- **`alembic_models_import.py` added to ruff's per-file-ignores** — its 11 "unused" imports are its entire purpose (§8); removing them would silently break migration autogenerate
+
+### Notes
+
+- Adopting `ListParams` silently changed the activity endpoint's page size from 50 to 100. `ActivityListParams` re-declares `limit` to keep 50, and §10 now warns about this when subclassing
+- `scope="function"` on `SessionDep` was **not** adopted — flipping a global default on reasoning alone is what should be measured first. The semantics are documented in §5 and `get_session()` so the option stays discoverable
+- OAuth-only accounts still return `PasswordLoginUnavailableError`, distinguishing them by message even though timing is now equal. That message is a deliberate UX affordance, so changing it is a product decision
+
+---
+
 <!-- Template: copy this block when creating a new release -->
 <!--
 ## [X.Y.Z] — YYYY-MM-DD

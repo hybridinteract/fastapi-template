@@ -30,6 +30,13 @@ from app.user.config import auth_config
 password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
 
 
+# A hash of an unguessable throwaway secret, computed once at import. Login
+# verifies against this when an account is missing or has no password, so a
+# failed sign-in costs the same time as a successful one and response latency
+# cannot be used to enumerate registered email addresses.
+DUMMY_PASSWORD_HASH = password_hash.hash(secrets.token_hex(32))
+
+
 def get_password_hash(password: str) -> str:
     return password_hash.hash(password)
 

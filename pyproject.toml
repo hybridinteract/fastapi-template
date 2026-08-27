@@ -63,6 +63,17 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=8.1.0",
 ]
 
+[project.optional-dependencies]
+# Google OAuth is gated behind AUTH_GOOGLE_OAUTH_ENABLED. The provider imports
+# google-auth lazily and raises "Google auth library not installed" without it,
+# so the feature ships unusable unless this extra is installed:
+#   uv sync --extra google
+# The [requests] extra is required: google.auth.transport.requests is the
+# transport the provider uses, and google-auth does not pull it in by itself.
+# This brings in `requests` as google-auth's internal transport — it does not
+# relax the conventions §19 rule that OUR outbound HTTP goes through HTTPX.
+google = ["google-auth[requests]>=2.57.0"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["app"]
@@ -99,3 +110,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Re-exports are the module's public API surface (conventions §2).
 "**/__init__.py" = ["F401"]
+# This file exists ONLY to import every model so Alembic autogenerate can see
+# them (conventions §8). Its imports are "unused" by design — removing them
+# would silently break migration generation.
+"app/core/alembic_models_import.py" = ["F401"]

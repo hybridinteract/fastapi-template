@@ -13,7 +13,6 @@ from app.core.logging import get_logger
 from app.core.utils import utc_now
 from app.user.auth.activity import ActivityAction, log_activity
 from app.user.auth.exceptions import (
-    InactiveUserError,
     InvalidCredentialsError,
     PasswordLoginUnavailableError,
 )
@@ -24,7 +23,12 @@ from app.user.auth.schemas import (
     UserLogin,
 )
 from app.user.auth.services import TokenService, assert_user_active
-from app.user.auth.tokens import get_password_hash, verify_password
+from app.user.auth.tokens import (
+    DUMMY_PASSWORD_HASH,
+    get_password_hash,
+    verify_and_update_password,
+    verify_password,
+)
 from app.user.dependencies import CurrentUserDep, TokenServiceDep
 from app.user.exceptions import UserAlreadyExistsError
 from app.user.user.models import User
@@ -78,13 +82,34 @@ class EmailPasswordService:
         ip_address: Optional[str] = None,
     ) -> TokenResponse:
         user = await self.user_crud.get_by_email(session, credentials.email)
-        if not user:
+
+        # Always perform exactly one hash verification, even when the account is
+        # missing or has no password set, so a failed sign-in costs the same time
+        # as a successful one. Without this, response latency reveals whether an
+        # email address is registered.
+        stored_hash = (
+            user.hashed_password
+            if user is not None and user.hashed_password
+            else DUMMY_PASSWORD_HASH
+        )
+        password_ok, upgraded_hash = verify_and_update_password(
+            credentials.password, stored_hash
+        )
+
+        if user is None:
             raise InvalidCredentialsError()
         if not user.hashed_password:
             raise PasswordLoginUnavailableError()
-        if not verify_password(credentials.password, user.hashed_password):
+        if not password_ok:
             raise InvalidCredentialsError()
         assert_user_active(user)
+
+        # Transparent credential upgrade: a hash still using an older scheme
+        # (e.g. bcrypt written by the pre-pwdlib implementation) is rewritten as
+        # Argon2 here. Persisted by the commit inside issue_tokens() below.
+        if upgraded_hash:
+            user.hashed_password = upgraded_hash
+            logger.info("Upgraded password hash on login", extra={"user_id": str(user.id)})
 
         user.last_login_at = utc_now()
 

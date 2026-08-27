@@ -1,17 +1,17 @@
 """Activity log admin endpoints."""
 
-from datetime import date, datetime, time, timezone
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionDep
 from app.user.permission_management import require_permission
 from .dependencies import ActivityServiceDep
-from .enums import ActivityAction
-from .schemas import ActivityLogListResponse, BulkDeleteRequest
+from .schemas import (
+    ActivityListParams,
+    ActivityLogListResponse,
+    BulkDeleteRequest,
+)
 
 router = APIRouter(
     prefix="/activity-logs",
@@ -22,15 +22,9 @@ router = APIRouter(
 
 @router.get("", summary="List activity logs")
 async def list_activity_logs(
+    params: Annotated[ActivityListParams, Query()],
     session: SessionDep,
     service: ActivityServiceDep,
-    skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=500)] = 50,
-    actor_id: Annotated[UUID | None, Query(description="Filter by user ID")] = None,
-    actor_name: Annotated[str | None, Query(description="Search by actor name (partial match)")] = None,
-    action: Annotated[ActivityAction | None, Query(description="Filter by action type")] = None,
-    date_from: Annotated[date | None, Query(description="Start date (YYYY-MM-DD)")] = None,
-    date_to: Annotated[date | None, Query(description="End date (YYYY-MM-DD)")] = None,
 ) -> ActivityLogListResponse:
     """
     Retrieve a paginated list of activity logs with optional filters.
@@ -106,19 +100,7 @@ async def list_activity_logs(
     - **403** — Caller lacks `activity:read_all` permission
     - **422** — Invalid query parameter (e.g. malformed UUID, invalid date)
     """
-    dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
-    dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
-
-    return await service.list_logs(
-        session,
-        skip=skip,
-        limit=limit,
-        actor_id=actor_id,
-        actor_name=actor_name,
-        action=action.value if action else None,
-        date_from=dt_from,
-        date_to=dt_to,
-    )
+    return await service.list_logs(session, params)
 
 
 @router.delete("", status_code=status.HTTP_200_OK, summary="Bulk delete activity logs")

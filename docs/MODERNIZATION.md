@@ -13,7 +13,7 @@ Bringing the template in line with the **official FastAPI agent skill**
 |------|-------|--------|
 | 1 | Stale/broken usage — libraries and APIs we already depend on | ✅ **Done** (2026-08-27) |
 | 2 | `PROJECT_CONVENTIONS.md` contradicts itself or the code | ✅ **Done** (2026-08-27) |
-| 3 | New capabilities worth adopting | ⬜ Pending |
+| 3 | Defect fixes + new capabilities | ✅ **Done** (2026-08-27) — see [Tier 3](#tier-3--completed-2026-08-27) |
 | — | Dependency refresh — every package to its latest release | ✅ **Done** (2026-08-27) |
 
 ---
@@ -249,6 +249,127 @@ Python 3.11 (the declared floor) and 3.13 (the Docker image).
 > today, but it will need addressing when the test suite gets written (§18).
 
 
+## Tier 3 — Completed 2026-08-27
+
+Defects first, then the capability work.
+
+### Defect 1 — `storage.py` was two modules in one file, and the live half was broken
+
+The duplication (found by ruff `F811`) was hiding a real bug. Inspecting it properly
+**inverted the expected fix**: the *live* half was the broken one.
+
+- `StorageService` was defined at line 30 **and** 446; `get_storage()` at 415 **and** 826
+- Python binds the last definition, so lines 30–423 never ran
+- The live half's `_get_public_url()` referenced `settings.spaces_public_url`, **which does
+  not exist** — confirmed at runtime:
+  `AttributeError: 'Settings' object has no attribute 'spaces_public_url'`
+
+So **every public file upload raised `AttributeError`**, because `upload(public=True)` calls
+`_get_public_url()` to build its return value. The dead half used `S3_PUBLIC_DOMAIN` and
+`DO_SPACES_ENDPOINT_URL`, both of which *do* exist.
+
+The fix keeps one class, built from the live half (minimizing behavior change) with the two
+things the dead half had right:
+
+| | Dead half | Live half | Kept |
+|---|---|---|---|
+| `_get_public_url` | `S3_PUBLIC_DOMAIN` + endpoint fallback | **broken** `spaces_public_url` | **dead half** |
+| `file.seek(0)` | `hasattr` guarded | unguarded | **dead half** |
+| presigned expiry | hardcoded `3600` | `DOCUMENT_URL_EXPIRY_HOURS` | **live half** |
+
+833 → 417 lines. Verified: CDN path returns `https://cdn.example.com/uploads/x.png`,
+fallback returns `https://<endpoint>/<bucket>/<key>`.
+
+### Defect 2 — Google OAuth shipped unusable
+
+`google-auth` was in no dependency group, so enabling `AUTH_GOOGLE_OAUTH_ENABLED` registered
+routes that always failed with *"Google auth library not installed"*.
+
+Added `[project.optional-dependencies] google = ["google-auth[requests]>=2.57.0"]`.
+
+> The `[requests]` extra is required — `google.auth.transport.requests` is the transport the
+> provider imports, and google-auth does not pull it in by itself. This brings `requests` in
+> as google-auth's *internal* transport; it does not relax the §19 rule that our own outbound
+> HTTP goes through HTTPX.
+
+Verified both ways: `uv sync --extra google` registers the provider and reaches real token
+verification; a plain `uv sync` still boots the app with the provider absent.
+
+### Defect 3 — no `.env.example`
+
+Conventions §2 listed it and it did not exist, while `Settings` has **5 required fields with
+no defaults** — so a fresh clone could not start without reading the source.
+
+Generated from `Settings` and `AuthConfig` (211 lines), so it cannot drift from the code:
+required block first, then every optional field commented-out with its real default, grouped
+by the section headers in `settings.py`. Also covers `FLOWER_USERNAME` / `FLOWER_PASSWORD` /
+`FLOWER_PORT`, which `docker-compose.yml` consumes but no settings class declares.
+
+Verified by filling it in and booting the app from `.env` alone with no shell environment.
+
+### Feature 1 — login hardened against account enumeration
+
+`login()` returned early when the email was unknown, doing **zero** hashing work — while a
+known email paid a full Argon2 verification. Measured gap:
+
+| | Before | After |
+|---|---|---|
+| known email, wrong password | 37.72 ms | 38.20 ms |
+| unknown email | **0.000 ms** | 38.39 ms |
+| ratio | **~180,000x** | **1.00x** |
+
+Login now always performs exactly one verification, against `DUMMY_PASSWORD_HASH` (a hash of
+an unguessable per-process secret) when the account is missing or has no password.
+
+> Not addressed: an OAuth-only account still returns `PasswordLoginUnavailableError`, which
+> distinguishes it by *message*. That is a deliberate UX affordance, so changing it is a
+> product decision rather than a fix.
+
+### Feature 2 — transparent password rehash on login
+
+`login()` now uses `verify_and_update_password()` and persists the upgraded hash, so a
+credential still on legacy bcrypt is rewritten as Argon2id on the user's next sign-in. No
+extra commit — it rides the existing one inside `issue_tokens()`.
+
+Verified: bcrypt hash upgrades to `$argon2id$`, an existing Argon2 hash is left untouched,
+and a wrong password is still rejected.
+
+### Feature 3 — `app/activity/` is now the §10 reference implementation
+
+`ListParams` had been `frozen=True` and fully documented since Tier 2 but was subclassed by
+nothing. `activity` was the right module to adopt it: five filters and **no joins**, so no
+row-duplication risk in a windowed count.
+
+- `schemas.py` — `ActivityListParams(ListParams)` with `sort_by` as a `Literal`
+- `crud.py` — `get_list_filtered(session, params)` via the shared `paginated_select()`
+- `service.py` — `list_logs(session, params)`, a pass-through
+- `routes.py` — `params: Annotated[ActivityListParams, Query()]`; the signature drops from
+  nine parameters to three
+
+Two real fixes came with it:
+
+- **Added the missing pagination tiebreaker.** The old query ordered by `created_at DESC`
+  with no secondary key, so logs sharing a timestamp could repeat or vanish across pages.
+  Now `ORDER BY <sort>, id DESC`.
+- **Preserved the end-of-day widening.** The route was expanding `date_to` to `time.max`
+  before calling the service. That logic moved into `_build_filters`, next to the comparison
+  it affects — dropping it would have made `date_to=2026-08-27` silently exclude that whole
+  day. Verified in compiled SQL: `created_at <= '2026-08-27 23:59:59.999999+00:00'`.
+
+> ⚠️ **Caught during review:** inheriting `ListParams` silently changed the endpoint's page
+> size from 50 to 100. `ActivityListParams` re-declares `limit` to keep 50, and §10 now warns
+> about this when subclassing.
+
+Verified: OpenAPI exposes nine **flat query parameters** (not a request body), `sort_by`
+renders as a typed dropdown, and `limit` keeps `min 1 / max 500 / default 50`.
+
+### Also fixed
+
+- `alembic_models_import.py` added to ruff's per-file-ignores. Its 11 "unused" imports are
+  its entire purpose (§8) — removing them would silently break migration autogenerate. Same
+  class of config bug as the `E712` carve-out.
+
+
 ## Verification
 
 Ran against the real application, not in isolation:
@@ -286,28 +407,17 @@ Also confirmed:
 
 ---
 
-## 🐞 Live defect found by the new lint config
+## 🐞 Live defect found by the new lint config — FIXED
 
-**`app/core/object_storage/storage.py` contains two different implementations of the same
-module, concatenated.** Ruff's `F811` surfaced it.
+Ruff's `F811` surfaced that `app/core/object_storage/storage.py` contained two different
+implementations of the same module. Investigating it revealed the *live* half was the broken
+one — `_get_public_url()` referenced a setting that does not exist, so every public upload
+raised `AttributeError`.
 
-- `StorageService` is defined at **line 30** and again at **line 446**
-- `get_storage()` is defined at **line 415** and again at **line 826**
-- The import block is repeated at lines 425–440
+Full write-up and the fix in [Tier 3, Defect 1](#defect-1--storagepy-was-two-modules-in-one-file-and-the-live-half-was-broken).
 
-Python binds the last definition, so **lines 30–423 are dead code** — confirmed at runtime
-(`inspect.getsourcelines(StorageService)` → line 446). The two versions are *not* copies;
-behavior differs:
-
-| | Dead version (line 30) | **Live version (line 446)** |
-|---|---|---|
-| `file.seek(0)` | guarded by `hasattr(file, "seek")` | **unguarded — raises on file-likes without `seek`** |
-| `generate_presigned_url` expiry | `expiration: int = 3600` | `expiration: int \| None = None` |
-| `_get_public_url` | `DO_SPACES_ENDPOINT_URL` fallback | `settings.spaces_public_url` |
-
-**Not fixed here** — deleting ~415 lines is its own reviewable change, and someone should
-confirm the live version is the intended one before the other is discarded. Anyone reading
-the top half of this file today is reading code that never runs.
+This is the concrete payoff of the Tier 2 toolchain work: the lint config paid for itself by
+exposing a production bug that had been invisible.
 
 ---
 
@@ -337,28 +447,41 @@ RUN uv sync --frozen --no-dev
 
 ## Pending
 
-### Tier 3 — New capabilities worth adopting
+Everything from the original Tier 3 list is done except the items below. Completed work is
+recorded in [Tier 3](#tier-3--completed-2026-08-27).
 
-- [ ] **`scope="function"` on `SessionDep`** — releases the Postgres connection to the pool
-      *before* the response is written to the network. Response data is serialized first, so
-      lazy-loaded ORM attributes still resolve. Safe here specifically: this template uses
-      **zero** FastAPI `BackgroundTasks` (Celery instead), which is the main incompatibility.
-      Measure before flipping the default.
-- [ ] **Wire `verify_and_update_password()` into the login flow** for transparent Argon2
-      upgrades on sign-in. Adds a DB write to the login path — deliberate opt-in.
-- [ ] **Timing-attack hardening** — the FastAPI reference implementation verifies against a
-      dummy hash when the user doesn't exist, so response time doesn't reveal whether an email
-      is registered. `email_password.py` currently returns early on unknown email.
-- [ ] **Document `Annotated` for `Query`/`Path`/`Header`/`Form`/`File`** in §5, not just
-      `Depends`. The code already does this correctly everywhere; the doc just never says it.
-- [ ] **Resolve `storage.py`'s duplicated module** (see the defect above) — highest-value
-      item on this list; it is a live behavioral bug, not cleanup.
-- [ ] **Apply the 502 cosmetic ruff fixes** as one isolated commit
-      (`uv run ruff check app --fix` handles 414; the rest need review). Do this alone, so the
-      diff is reviewable.
-- [ ] **Wire `ruff` + `ty` into CI** now that the config exists.
-- [ ] **Adopt `ListParams` in a real module** as the §10 reference implementation — it is
-      now `frozen=True` and documented, but still subclassed by nothing.
+### Hygiene
+
+- [ ] **Apply the cosmetic ruff findings** as one isolated commit — `uv run ruff check app --fix`
+      handles most of them (`Optional[X]`→`X | None`, `List[]`→`list[]`, import sort); the rest
+      need review. Do it alone so the diff stays reviewable.
+- [ ] **Triage the `ty` baseline** (see below) before it can gate anything.
+- [ ] **Wire `ruff` + `ty` into CI** — only after the two above, or CI starts red on day one.
+- [ ] **Zero test files** despite pytest being configured (`testpaths = ["app"]`) and §18's
+      checklist ending in "Write tests". Note that Starlette 1.x deprecates `httpx` with
+      `TestClient` in favour of `httpx2` — decide that when the suite is written.
+
+### Deliberately deferred
+
+- [ ] **`scope="function"` on `SessionDep`** — would release the Postgres connection to the
+      pool *before* the response is written to the network. Response data is serialized first,
+      so lazy-loaded ORM attributes still resolve, and this template uses **zero** FastAPI
+      `BackgroundTasks` (Celery instead), which is the main incompatibility. **Not flipped:**
+      changing a global default on reasoning alone is exactly what should be measured first.
+      The semantics are documented in §5 and in `get_session()`'s docstring so the option is
+      discoverable.
+- [ ] **OAuth-only accounts still return `PasswordLoginUnavailableError`**, which distinguishes
+      them from unknown emails by *message* even though timing is now equal. That message is a
+      deliberate UX affordance ("sign in with Google instead"), so removing it is a product
+      decision, not a security fix.
+
+### Worth deciding separately
+
+- [ ] **`pandas` is a core dependency**, commented "optional — remove if not needed". pandas 3.x
+      is a heavy install most projects won't use — move it and `openpyxl` to an optional extra
+      alongside the new `google` one.
+- [ ] **`requires-python = ">=3.11"` but Docker runs `python:3.13-slim`.** Raise the floor to
+      3.12+. Resolution is verified for both today, so this is a tidying decision, not a fix.
 
 ### Not adopted
 
@@ -366,22 +489,7 @@ RUN uv sync --frozen --no-dev
 |---|---|
 | `fastapi dev` / `fastapi run` + `[tool.fastapi]` entrypoint | Deployment is Docker Compose; uvicorn CMD stays |
 | `app.frontend()` / `router.frontend()` | Frontend is Next.js SSR, deployed separately. Only serves built static assets |
-| SQLModel over SQLAlchemy | Deliberate deviation — see Tier 2 |
-
-### Worth deciding separately
-
-- [ ] **`pandas>=3.0.0` is a core dependency**, commented "optional — remove if not needed".
-      pandas 3.0 was a major release (copy-on-write, string dtype). Heavy install for a template
-      most projects won't use — move it and `openpyxl` to an optional extra.
-- [ ] **`requires-python = ">=3.11"` but Docker runs `python:3.13-slim`.** Raise the floor to
-      3.12+. There are 179 `Optional[...]` and 74 `List[`/`Dict[` that could modernize — cosmetic.
-- [ ] **No `.env.example`** despite conventions §2 listing it.
-- [ ] **Zero test files** despite pytest being configured (`testpaths = ["app"]`) and §18's
-      checklist ending in "Write tests".
-- [ ] **Google OAuth has no installable dependency.** `app/user/auth/providers/google_oauth.py`
-      is a shipped feature, but `google-auth` is in no dependency group — enabling it fails with
-      "Google auth library not installed" and nothing documents the fix. Add an extra:
-      `[project.optional-dependencies] google = ["google-auth>=2.0"]`.
+| SQLModel over SQLAlchemy | Deliberate deviation — see §21 of the conventions |
 
 ### `ty` baseline
 

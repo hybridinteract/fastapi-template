@@ -284,6 +284,35 @@ Every module **must** have a `dependencies.py`. It is the single wiring layer �
 Route ──Depends()──▶ Service ──constructor──▶ CRUD ──Depends()──▶ Session
 ```
 
+### `Annotated` for request parameters
+
+`Annotated` is not only for `Depends()`. Declare **every** request parameter with it —
+`Query`, `Path`, `Header`, `Cookie`, `Form`, `File` — and keep the Python default on the
+right-hand side where it belongs.
+
+```python
+@lead_router.get("/{lead_id}")
+async def get_lead(
+    lead_id: Annotated[UUID, Path(description="Lead ID")],
+    session: SessionDep,
+    service: LeadServiceDep,
+    include_archived: Annotated[bool, Query()] = False,
+    x_request_id: Annotated[str | None, Header()] = None,
+) -> LeadResponse:
+    ...
+```
+
+```python
+# ❌ never — the marker in the default slot
+async def get_lead(lead_id: UUID = Path(...), include_archived: bool = Query(False)):
+    ...
+```
+
+The `Annotated` form keeps the signature callable outside FastAPI (tests, scripts, direct
+calls), preserves the real type for `ty`, and keeps required/optional obvious from the
+presence of a default. For a *bundle* of query parameters, use a query-parameter model
+instead — see [§10](#10-list-endpoints-filtering-sorting-pagination).
+
 ### `Annotated` type aliases
 
 Always declare dependencies as `Annotated` type aliases — they are re-usable, keep signatures readable, and work correctly in non-FastAPI contexts (tests, scripts).
@@ -549,9 +578,17 @@ async def create_lead(
 
 ## 10. List Endpoints (Filtering, Sorting, Pagination)
 
+> **Reference implementation: `app/activity/`.** Read those four files together —
+> `schemas.py` (`ActivityListParams`), `crud.py` (`get_list_filtered`), `service.py`
+> (`list_logs`), `routes.py` (`list_activity_logs`) — for a complete worked example.
+>
 > Adopt this when a module's list endpoint grows past two or three filters. Simple lists
-> (see `activity`, `release_notes`, `user`) declare flat `Annotated[..., Query()]` parameters
-> and don't need a params model.
+> (see `release_notes`) declare flat `Annotated[..., Query()]` parameters and don't need a
+> params model.
+>
+> When subclassing, re-declare any field whose default should differ from `ListParams`
+> (e.g. `activity` keeps its original page size of 50 rather than inheriting 100) —
+> otherwise adopting the base class silently changes your endpoint's contract.
 
 Every list endpoint uses this standard flow:
 
