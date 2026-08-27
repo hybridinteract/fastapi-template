@@ -20,7 +20,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     email: EmailStr
-    password: str = Field(..., min_length=8)
+    password: str = Field(min_length=8)
 
 
 class UserUpdateSelf(BaseModel):
@@ -72,7 +72,7 @@ class UserMinimal(BaseModel):
 
 class AdminUserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8)
+    password: str = Field(min_length=8)
     full_name: Optional[str] = None
     phone: Optional[str] = None
 

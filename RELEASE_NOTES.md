@@ -49,6 +49,30 @@ It provides a production-ready starting point for any FastAPI + PostgreSQL + Red
 
 ---
 
+## [1.1.0] — 2026-08-27
+
+### Security
+
+- **`python-jose` → PyJWT** — python-jose is unmaintained with open advisories. Swapped to PyJWT (the library FastAPI's security tutorial uses). Installed as `pyjwt[crypto]` so RS256/ECDSA stay available, as `python-jose[cryptography]` provided. `except JWTError` → `except InvalidTokenError`, the base class of every PyJWT failure
+- **`passlib` → pwdlib** — passlib is unmaintained and reads `bcrypt.__about__`, removed in bcrypt 5.x. New passwords hash with **Argon2id**; `BcryptHasher` is retained in the hasher chain so existing passlib hashes still verify. **No forced password reset, no DB migration** (`hashed_password` is `String(255)`; Argon2 needs 97)
+- **Dropped the `bcrypt>=4.0.1,<5.0.0` pin** — it existed only to keep passlib working
+
+### Changed
+
+- **FastAPI floor `>=0.115.0` → `>=0.141.1`** — the old floor allowed installs where documented conventions were `ImportError`s (`Depends(scope=)` needs 0.121.0, `fastapi.sse` needs 0.135.0). Lockfile 0.135.1 → 0.141.1; verified `prometheus-fastapi-instrumentator` survives the 0.137.0 `router.routes` refactor
+- **Ellipsis defaults removed** — 11 `Field(..., …)` → `Field(…)` in `core/settings.py`, `auth/schemas.py`, `user/schemas.py`, completing the cleanup started in 1.0.1
+
+### Fixed
+
+- **`datetime.utcnow()` → `utc_now()`** — 10 sites in `core/exceptions.py`. Deprecated since Python 3.12 (the image is `python:3.13-slim`) and returned naive datetimes, so error `timestamp` fields were unmarked UTC. They now carry `+00:00`, which fixes clients parsing them as *local* time
+
+### Added
+
+- **`verify_and_update_password()`** in `auth/tokens.py` — verifies and returns an upgraded Argon2 hash for credentials still on an older scheme. Not wired into login yet (opt-in)
+- **`docs/MODERNIZATION.md`** — tracker for alignment with the official FastAPI agent skill: what changed, verification evidence, and the pending Tier 2/3 checklist
+
+---
+
 <!-- Template: copy this block when creating a new release -->
 <!--
 ## [X.Y.Z] — YYYY-MM-DD

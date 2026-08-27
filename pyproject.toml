@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # Web framework
-    "fastapi>=0.115.0",
+    "fastapi>=0.141.1",
     "uvicorn[standard]>=0.30.0",
     "gunicorn>=21.2.0",
     "python-multipart>=0.0.20",
@@ -21,9 +21,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
 
     # Authentication & security
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "bcrypt>=4.0.1,<5.0.0",
+    # PyJWT replaces the unmaintained python-jose (FastAPI docs standard).
+    # [crypto] keeps RS256/ECDSA available, as python-jose[cryptography] did.
+    "pyjwt[crypto]>=2.13.0",
+    # pwdlib replaces the unmaintained passlib. Argon2 hashes new passwords;
+    # the bcrypt extra stays so existing passlib bcrypt hashes still verify.
+    # This also removes the bcrypt<5 pin passlib forced on us.
+    "pwdlib[argon2,bcrypt]>=0.3.1",
     "email-validator>=2.0.0",
 
     # Background tasks

@@ -18,7 +18,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    expires_in: int = Field(..., description="Seconds until the access token expires.")
+    expires_in: int = Field(description="Seconds until the access token expires.")
     user_id: Optional[UUID] = None
 
 
@@ -60,7 +60,7 @@ class TokenPayload(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str = Field(..., min_length=8)
+    new_password: str = Field(min_length=8)
 
 
 class GoogleAuthRequest(BaseModel):
@@ -69,10 +69,10 @@ class GoogleAuthRequest(BaseModel):
 
 
 class OTPRequestSchema(BaseModel):
-    phone: str = Field(..., description="Phone number in E.164 format (+1234567890)")
+    phone: str = Field(description="Phone number in E.164 format (+1234567890)")
 
 
 class OTPVerifySchema(BaseModel):
     phone: str
-    otp: str = Field(..., min_length=4, max_length=10)
+    otp: str = Field(min_length=4, max_length=10)
     device_info: Optional[str] = None

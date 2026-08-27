@@ -9,9 +9,8 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
 from pydantic import ValidationError
-from datetime import datetime
-
 from .logging import get_logger
+from .utils import utc_now
 
 logger = get_logger(__name__)
 
@@ -49,7 +48,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Validation Error",
                 "detail": serializable_errors,
                 "body": str(exc.body) if exc.body else None,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -78,7 +77,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Data Validation Error",
                 "detail": serializable_errors,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -93,7 +92,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Data Integrity Error",
                 "detail": "The operation violates a database constraint. This might be due to duplicate data or invalid references.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -108,7 +107,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Service Unavailable",
                 "detail": "Database service is temporarily unavailable. Please try again later.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -122,7 +121,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Database Error",
                 "detail": "A database error occurred. Please try again later.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -136,7 +135,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Invalid Input",
                 "detail": str(exc),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -150,7 +149,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Permission Denied",
                 "detail": "You don't have permission to perform this action.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -164,7 +163,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "File Not Found",
                 "detail": "The requested file or resource could not be found.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -178,7 +177,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Request Timeout",
                 "detail": "The request took too long to process. Please try again.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )
@@ -195,7 +194,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Internal Server Error",
                 "detail": "An unexpected error occurred. Please try again later.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
                 "path": str(request.url.path)
             },
         )

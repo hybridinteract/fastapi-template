@@ -39,13 +39,13 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0", description="API host")
 
     # ==================== Database Settings ====================
-    POSTGRES_USER: str = Field(..., description="PostgreSQL username")
-    POSTGRES_PASSWORD: str = Field(..., description="PostgreSQL password")
+    POSTGRES_USER: str = Field(description="PostgreSQL username")
+    POSTGRES_PASSWORD: str = Field(description="PostgreSQL password")
     POSTGRES_HOST: str = Field(
         default="localhost", description="PostgreSQL host")
     POSTGRES_PORT: int = Field(
         default=5432, ge=1, le=65535, description="PostgreSQL port")
-    POSTGRES_DB: str = Field(..., description="PostgreSQL database name")
+    POSTGRES_DB: str = Field(description="PostgreSQL database name")
 
     # Database Pool Settings
     DB_POOL_SIZE: int = Field(
@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     DB_ECHO: bool = Field(default=False, description="Echo SQL statements")
 
     # ==================== Security Settings ====================
-    SECRET_KEY: str = Field(..., description="Secret key for signing")
-    JWT_SECRET_KEY: str = Field(..., description="JWT secret key")
+    SECRET_KEY: str = Field(description="Secret key for signing")
+    JWT_SECRET_KEY: str = Field(description="JWT secret key")
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=120, ge=1)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1)
