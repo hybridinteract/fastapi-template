@@ -18,7 +18,6 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 SortOrder = Literal["asc", "desc"]
 
 
@@ -31,9 +30,19 @@ class ListParams(BaseModel):
         class LeadListParams(ListParams):
             sort_by: Optional[Literal["created_at", "updated_at", "relevance"]] = None
             ... module-specific filters ...
+
+    Bind it on the route as a query-parameter model — never ``Depends()``,
+    which is the class-dependency anti-pattern (PROJECT_CONVENTIONS §5, §10):
+
+        async def list_leads(params: Annotated[LeadListParams, Query()]) -> ...:
+
+    ``frozen=True`` makes the "never mutate params" rule in §10 enforced rather
+    than merely documented. Apply business-rule scope overrides with a copy:
+
+        scoped = params.model_copy(update={"owner_id": current_user.id})
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     skip: int = Field(0, ge=0, description="Number of records to skip.")
     limit: int = Field(

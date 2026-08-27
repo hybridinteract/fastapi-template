@@ -11,6 +11,8 @@
 |----------|-----|---------|
 | Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready starter — clone this, never rebuild from scratch |
 | Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical modular monolith + DDD guide |
+| Official FastAPI Skill | https://github.com/fastapi/fastapi/blob/master/fastapi/.agents/skills/fastapi/SKILL.md | Upstream FastAPI conventions these rules are checked against — see §21 |
+| Modernization Tracker | `docs/MODERNIZATION.md` | What has been aligned with the skill, and what is still pending |
 
 ---
 
@@ -25,16 +27,24 @@
 | Migrations | Alembic (async) |
 | Validation | Pydantic v2 |
 | Auth | JWT (access + refresh) + RBAC |
+| JWT library | PyJWT (`pyjwt[crypto]`) — never `python-jose` (unmaintained) |
+| Password hashing | pwdlib — Argon2id for new hashes, bcrypt kept for verifying legacy ones. Never `passlib` (unmaintained) |
 | Caching | Redis |
 | Background Tasks | Celery + Flower |
 | Config | Pydantic Settings (env-based) |
 | Storage | S3-compatible (boto3) |
 | Monitoring | Prometheus |
 | Package Manager | uv |
-| Linting / Formatting | Ruff (with FastAPI rules enabled) |
+| Linting / Formatting | Ruff — config in `pyproject.toml`, `FAST` (FastAPI) ruleset enabled |
 | Type Checking | ty |
 | HTTP Client | HTTPX (sync + async) — prefer over Requests |
-| Async utilities | Asyncer — prefer over asyncio / AnyIO directly |
+| Async utilities | Asyncer (`asyncify` / `syncify`) — prefer over asyncio / AnyIO directly |
+
+Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv run ty check app`.
+
+> `E712` is disabled on purpose. In SQLAlchemy, `Model.col == False` is the correct way to
+> build a SQL predicate — ruff's suggested `not Model.col` evaluates in Python and silently
+> produces the wrong query.
 
 ### Frontend
 | Concern | Technology |
@@ -342,22 +352,42 @@ Use `yield` for dependencies that need cleanup (sessions, file handles).
 The default scope `"request"` runs cleanup after the response is sent.  
 Use `scope="function"` to run cleanup after response data is generated but **before** the response is sent (useful for pre-send side effects).
 
+`scope` is an argument to **`Depends()`**, never a parameter of the dependency function —
+declaring it on the function turns `scope` into a query parameter.
+
 ```python
-# Default — cleanup after response is sent (most common)
+from typing import Annotated
+from fastapi import Depends
+
+# Default — cleanup after the response is sent (most common)
 async def get_session():
     async with async_session_factory() as session:
         yield session
 
-# scope="function" — cleanup before response leaves the server
-from fastapi import Depends
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-def get_audit_writer(scope="function"):
+
+# scope="function" — cleanup before the response leaves the server
+def get_audit_writer():
     writer = AuditWriter()
     try:
         yield writer
     finally:
-        writer.flush()   # runs before response is sent
+        writer.flush()   # runs before the response is sent
+
+AuditWriterDep = Annotated[AuditWriter, Depends(get_audit_writer, scope="function")]
 ```
+
+```python
+# ❌ never — `scope` becomes a query parameter, and the dependency keeps request scope
+def get_audit_writer(scope="function"):
+    ...
+```
+
+**Sub-dependency rule:** a `scope="request"` dependency may only depend on other
+`scope="request"` dependencies. A `scope="function"` dependency may depend on both.
+
+Requires FastAPI >= 0.121.0.
 
 ### Class dependencies
 
@@ -383,6 +413,17 @@ QueryParamsDep = Annotated[QueryParams, Depends(get_query_params)]
 # ❌ avoid — class used directly as dependency
 # Annotated[QueryParams, Depends()]   ← do not do this
 ```
+
+For a **bundle of query parameters**, skip `Depends()` entirely and bind a Pydantic model
+as a query-parameter model. This is the idiom §10 uses for list endpoints:
+
+```python
+async def list_leads(params: Annotated[LeadListParams, Query()]) -> list[LeadResponse]:
+    ...
+```
+
+FastAPI flattens the model into individual query parameters in OpenAPI, so the docs render
+one input per field rather than a request body.
 
 **Rules:**
 - All dependencies declared as `Annotated` type aliases
@@ -478,25 +519,44 @@ PERMISSIONS = [
 
 ### Route permission guard
 
+Prefer a router-level guard when every route in the module shares it (§11); use a
+per-route guard only for narrower permissions. Either way, dependencies are declared as
+`Annotated` aliases — never inline `Depends()` defaults (§5).
+
 ```python
-@router.get("/")
-async def list_leads(
-    _: None = Depends(require_permission("leads:view")),
-    current_user: User = Depends(get_current_active_user),
-    session: AsyncSession = Depends(get_session),
-    service: LeadService = Depends(get_lead_service),
-):
-    ...
+# Shared guard for the whole module
+lead_router = APIRouter(
+    prefix="/leads",
+    tags=["Leads"],
+    dependencies=[Depends(require_permission("leads:view"))],
+)
+
+# Narrower guard on a single route
+RequireLeadCreate = Annotated[None, Depends(require_permission("leads:create"))]
+
+@lead_router.post("")
+async def create_lead(
+    data: LeadCreate,
+    _: RequireLeadCreate,
+    current_user: CurrentUserDep,
+    session: SessionDep,
+    service: LeadServiceDep,
+) -> LeadResponse:
+    return await service.create_lead(session, data, current_user)
 ```
 
 ---
 
 ## 10. List Endpoints (Filtering, Sorting, Pagination)
 
+> Adopt this when a module's list endpoint grows past two or three filters. Simple lists
+> (see `activity`, `release_notes`, `user`) declare flat `Annotated[..., Query()]` parameters
+> and don't need a params model.
+
 Every list endpoint uses this standard flow:
 
 ```
-Route (XxxListParams = Depends())
+Route (params: Annotated[XxxListParams, Query()])
   └─ Service (pass-through + business-rule overrides)
        └─ CRUD.get_list_filtered(session, skip, limit, sort_by, sort_order, …filters)
             └─ paginated_select → single SQL with COUNT(*) OVER ()
@@ -507,22 +567,49 @@ Route (XxxListParams = Depends())
 
 | File | What to add |
 |------|-------------|
-| `enums.py` | `XxxSortField(str, Enum)` |
-| `schemas.py` | `XxxListParams(ListParams)` — override `sort_by` + add filters |
+| `schemas.py` | `XxxListParams(ListParams)` — narrow `sort_by` to a `Literal[...]` + add filters |
 | `crud.py` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
 | `services.py` | `list_xxx(session, params, …)` — pass-through |
-| `routes.py` | `params: XxxListParams = Depends()` |
+| `routes.py` | `params: Annotated[XxxListParams, Query()]` |
 
 ```python
 class LeadListParams(ListParams):
-    sort_by: LeadSortField = LeadSortField.CREATED_AT
-    sort_order: SortOrder = SortOrder.DESC
+    sort_by: Optional[Literal["created_at", "updated_at", "status"]] = None
     search: Optional[str] = None
     status: Optional[str] = None
 ```
 
+Narrow `sort_by` with a `Literal[...]` of the columns the resource actually allows sorting
+by — not a `str` and not an `Enum`. OpenAPI renders it as a typed dropdown, and an invalid
+column is rejected as a 422 at the route layer instead of being silently mapped to the
+default inside CRUD. `SortOrder` in `app/core/schemas.py` is likewise a `Literal["asc", "desc"]`.
+
+Bind it with `Query()`, never `Depends()`:
+
+```python
+@lead_router.get("")
+async def list_leads(
+    params: Annotated[LeadListParams, Query()],
+    session: SessionDep,
+    service: LeadServiceDep,
+) -> LeadListResponse:
+    return await service.list_leads(session, params)
+```
+
+```python
+# ❌ never — this is the class-dependency anti-pattern (§5)
+async def list_leads(params: LeadListParams = Depends()):
+    ...
+```
+
 - Always append `model.id.desc()` as tiebreaker in `order_clauses` (prevents duplicate rows across pages)
-- Pydantic models are immutable — use a local variable for scope overrides, never mutate `params`
+- `ListParams` is declared `frozen=True`, so mutating `params` raises. Apply business-rule
+  scope overrides with a copy:
+
+```python
+# ✅ service narrows the query to what this user may see
+scoped = params.model_copy(update={"owner_id": current_user.id})
+```
 
 ---
 
@@ -646,10 +733,13 @@ class PNGStreamingResponse(StreamingResponse):
     media_type = "image/png"
 
 @router.get("/image", response_class=PNGStreamingResponse)
-def stream_image() -> PNGStreamingResponse:
+def stream_image():
     with open_image() as f:
         yield from f
 ```
+
+Do not annotate the return type here — the function is a generator, not a function that
+returns a response object, so `-> PNGStreamingResponse` is false and `ty` will flag it.
 
 ---
 
@@ -772,7 +862,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 ### Backend — never do
 - Business logic in routes
 - `session.commit()` in CRUD layer
-- `datetime.utcnow()` — use `datetime.now(timezone.utc)`
+- `datetime.utcnow()` — use `utc_now()` from `app.core.utils` (§6)
 - Hardcoded secrets or config values
 - Raw SQL strings — always use SQLAlchemy ORM/Core
 - Skip the service layer (route → CRUD directly)
@@ -780,7 +870,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 - Forget to register models in `alembic_models_import.py`
 - Forget to register routers in `app/apis/v1.py`
 - Cross-module imports in services — that belongs in `dependencies.py`
-- Instantiate services directly in routes — always `Depends(get_<name>_service)`
+- Instantiate services directly in routes — always inject via the service's `Dep` alias
 - Create a module without `dependencies.py`
 - Inline `Depends()` in route signatures — declare `Annotated` type aliases instead
 - Use `...` (Ellipsis) as a default in path operations or Pydantic fields — omit the default entirely
@@ -790,7 +880,13 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 - Multiple HTTP methods in a single function (`api_route` with `methods=[...]`) — one function per HTTP operation
 - Set `prefix`/`tags` in `include_router()` when they can be set on the router itself
 - Use `Requests` for outbound HTTP — use HTTPX
-- Use raw `asyncio` or `anyio` to mix sync/async — use Asyncer (`asyncify` / `syncify`)
+- Use raw `asyncio` or `anyio` to bridge sync ↔ async in a request path — use Asyncer
+  (`asyncify` / `syncify`). Event-loop *lifecycle* management is exempt: Celery workers
+  (`core/background/`) and CLI entrypoints (`seed.py`, `create_admin.py`) legitimately call
+  `asyncio.run()` / manage their own loop, because there is no running loop to bridge into
+- Bind a bundle of query parameters with `Depends()` — use `Annotated[Model, Query()]` (§10)
+- Declare `scope` as a parameter of a dependency function — it belongs on `Depends()` (§5)
+- Use `python-jose` or `passlib` — both are unmaintained; use PyJWT and pwdlib (§1)
 
 ### Frontend — never do
 - API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
@@ -824,3 +920,30 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 | Who can do what? | `app/<feature>/permissions.py` + `user/seed.py` |
 | Background task? | `app/<feature>/tasks.py` |
 | FastAPI `Depends()` wiring? | `app/<feature>/dependencies.py` |
+
+---
+
+## 21. Deviations from the Official FastAPI Skill
+
+These conventions are checked against the [official FastAPI agent skill](https://github.com/fastapi/fastapi/blob/master/fastapi/.agents/skills/fastapi/SKILL.md).
+Where we knowingly differ, the reason is recorded here — **do not "fix" these to match the skill.**
+
+| Skill says | We do | Why |
+|------------|-------|-----|
+| Prefer **SQLModel** over SQLAlchemy | SQLAlchemy 2.0 (async) | `CRUDBase[Model, Create, Update]` generics, Alembic autogenerate, the RBAC join tables, and `paginated_select()` are all built on SQLAlchemy Core. SQLModel would be a rewrite of the template's foundation for no functional gain, and its `table=True` models blur the schema/model split that §4 depends on. |
+| Use `fastapi dev` / `fastapi run` with a `[tool.fastapi]` entrypoint | `uvicorn app.core.main:app` via Docker Compose | Deployment is containerized; the process is supervised by Compose and the entrypoint scripts in `docker/`. The CLI adds a layer we don't use. |
+| Serve built frontends with `app.frontend()` | Frontend deployed separately | The frontend is a Next.js SSR app, not a static build directory. `app.frontend()` only serves built static assets. |
+
+Everything else in the skill applies, including the sections it defers to its reference docs:
+`dependencies`, `responses`, `pydantic`, `path-operations`, `streaming`, and `other-tools`.
+
+### Minimum FastAPI version
+
+Conventions in this document depend on these releases — keep the floor in `pyproject.toml`
+at or above the highest one you rely on:
+
+| Convention | Requires |
+|------------|----------|
+| `Depends(..., scope=...)` (§5) | 0.121.0 |
+| JSON Lines / byte streaming via `yield` (§15) | 0.134.0 |
+| `fastapi.sse` — `EventSourceResponse`, `ServerSentEvent` (§15) | 0.135.0 |

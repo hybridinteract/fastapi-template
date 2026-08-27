@@ -55,13 +55,20 @@ async_session_factory = sessionmaker(
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency to provide an async database session.
-    
+
+    Inject it via the ``SessionDep`` alias declared at the bottom of this
+    module — never an inline ``Depends()`` default (PROJECT_CONVENTIONS §5).
+
     Usage:
         @router.post("/user")
-        async def create_user(session: AsyncSession = Depends(get_session)):
+        async def create_user(data: UserCreate, session: SessionDep):
             user = await user_crud.create(session, data)
             await session.commit()
             return user
+
+    Exit scope: this dependency uses the default ``scope="request"``, so the
+    session stays open until after the response is sent — which is what lets
+    lazy-loaded ORM attributes resolve during response serialization.
     """
     async with async_session_factory() as session:
         try:

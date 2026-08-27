@@ -73,6 +73,61 @@ It provides a production-ready starting point for any FastAPI + PostgreSQL + Red
 
 ---
 
+## [1.2.0] — 2026-08-27
+
+Conventions alignment (Tier 2). Full detail in `docs/MODERNIZATION.md`.
+
+### Added
+
+- **Ruff + ty are actually installed** — §1 named them as the toolchain but neither was in `pyproject.toml` and nothing enabled the FastAPI ruleset it claimed. Added `[tool.ruff]` selecting `E, F, I, UP, B, ASYNC, FAST`. **`FAST` passes with zero findings** — the route/DI/router layers are idiomatic
+- **HTTPX + Asyncer promoted to runtime dependencies** — conventions §1/§4/§19 mandate both; neither was installed, making those rules unenforceable
+- **`PROJECT_CONVENTIONS.md` §21 "Deviations from the Official FastAPI Skill"** — records SQLModel, the FastAPI CLI, and `app.frontend()` as deliberate departures with reasons, plus a convention → minimum-FastAPI-version table
+- **`verify_and_update_password()`** is documented as the credential-upgrade path
+
+### Changed
+
+- **§10 rewritten** — `params: XxxListParams = Depends()` was the class-dependency anti-pattern (the skill's literal "DO NOT DO THIS", contradicting our own §5). Now `Annotated[XxxListParams, Query()]`, which needs no `Depends` and renders flat query params in OpenAPI. `Literal[...]` replaces the `XxxSortField` Enum to match `core/schemas.py`
+- **`ListParams` is now `frozen=True`** — §10 claimed "Pydantic models are immutable"; they weren't. Mutation now raises, and `model_copy(update={...})` is the documented scope-override idiom
+- **§9 permission-guard example** rewritten with `Annotated` aliases, leading with the router-level guard the code actually uses
+- **§19** — `utc_now()` replaces `datetime.now(timezone.utc)`, resolving the §6/§19 contradiction; the blanket asyncio ban is scoped to request paths, exempting Celery/CLI event-loop lifecycle (which legitimately violated it)
+- **`get_session()` docstring** no longer teaches the inline `Depends()` anti-pattern inside the file that defines `SessionDep`
+
+### Fixed
+
+- **§5's `scope` example was broken code** — `def get_audit_writer(scope="function")` turns `scope` into a *query parameter*. It belongs on `Depends(fn, scope="function")`
+- **§15** — removed a false `-> PNGStreamingResponse` return annotation from a generator
+- **`decode_token` now raises `from None`** so the JWT failure reason can't leak into the traceback chain
+
+### Notes
+
+- **`E712` is disabled on purpose.** In SQLAlchemy `Model.col == False` is the correct SQL predicate; ruff's suggested `not Model.col` evaluates in Python and silently produces the wrong query — it would have broken 11 filters
+- **502 cosmetic lint findings remain** (`Optional[X]`→`X | None`, `List[]`→`list[]`, import sort). Deliberately not swept — that belongs in its own reviewable commit
+- 🐞 **`app/core/object_storage/storage.py` defines `StorageService` and `get_storage()` twice**, with differing behavior. Lines 30–423 are dead code; the live version starts at line 446. Found by the new lint config, **not fixed** — see `docs/MODERNIZATION.md`
+
+---
+
+## [1.3.0] — 2026-08-27
+
+Dependency refresh — every package moved to its latest release. Detail in `docs/MODERNIZATION.md`.
+
+### Fixed
+
+- 🐞 **`greenlet` was never installed on Apple Silicon, breaking all async DB calls locally.** SQLAlchemy declares greenlet behind a platform marker listing `aarch64`/`x86_64`/`amd64`/`win32` — Apple Silicon macOS reports `arm64`, which matches none of them. Linux containers report `aarch64`, so **Docker always worked and only native macOS dev was broken**, failing on the first DB round-trip with *"the greenlet library is required to use this function"*. Fixed by declaring `sqlalchemy[asyncio]>=2.0.52`, whose extra requires greenlet unconditionally
+
+### Changed
+
+- **All 23 direct dependency floors raised to the latest published release.** Notable major jumps: **starlette 0.52.1 → 1.6.0** (permitted — FastAPI 0.141.1 declares `starlette>=0.46.0` unbounded), **redis 7.2.1 → 8.1.0**, **prometheus-fastapi-instrumentator 7.1.0 → 8.1.0**, **rich 14 → 15**, **cryptography 46 → 50**, gunicorn 25 → 26, uvicorn 0.41 → 0.52, typer 0.24 → 0.27
+- **bcrypt is now unpinned and resolves to 5.0.0** — the release that breaks passlib. Only reachable because 1.1.0 migrated to pwdlib
+- Point releases: sqlalchemy 2.0.52, pydantic 2.13.4, pydantic-settings 2.15.0, alembic 1.19.1, celery 5.6.3, asyncpg 0.31.0, boto3 1.43.81, pandas 3.0.5, pillow 12.3.0, flower 2.1.0, python-multipart 0.0.32, email-validator 2.3.0, pytest 9.1.1, pytest-asyncio 1.4.0, ruff 0.16.4, ty 0.0.75
+
+### Notes
+
+- `pydantic-core` stays at 2.46.4 (latest is 2.48.0) because pydantic 2.13.4 pins it exactly — correct, not stale
+- Verified end-to-end after the bump: full middleware stack (CORS, GZip, TrustedHost, timing), 422/401 handlers, `/metrics`, `/docs`, and the complete auth suite. `ruff --select FAST` still clean; no `DeprecationWarning`s at boot; resolves for both Python 3.11 and 3.13
+- Starlette 1.x deprecates `httpx` with `TestClient` in favour of `httpx2` — will matter when tests are written
+
+---
+
 <!-- Template: copy this block when creating a new release -->
 <!--
 ## [X.Y.Z] — YYYY-MM-DD

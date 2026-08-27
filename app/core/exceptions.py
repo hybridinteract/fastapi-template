@@ -5,10 +5,11 @@ This module contains all exception handlers including validation errors,
 database errors, HTTP exceptions, and global error handling.
 """
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+
 from .logging import get_logger
 from .utils import utc_now
 

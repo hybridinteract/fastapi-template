@@ -81,8 +81,10 @@ def decode_token(token: str) -> dict:
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
     except InvalidTokenError:
+        # `from None` on purpose: the JWT failure reason must not leak into the
+        # traceback chain surfaced to the client.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
