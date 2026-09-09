@@ -60,10 +60,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.logging import get_logger
 from app.core.settings import settings
-from app.user.config import auth_config
-from app.user.enums import UserStatus
-from app.user.user.crud import UserCRUD, user_crud
-from app.user.user.schemas import UserResponse, UserWithRolesResponse
+from app.iam.config import auth_config
+from app.iam.enums import UserStatus
+from app.iam.user.crud import UserCRUD, user_crud
+from app.iam.user.schemas import UserResponse, UserWithRolesResponse
 
 logger = get_logger(__name__)
 
@@ -232,5 +232,5 @@ class UserQueryService:
         return base + random.randint(0, max(1, base // 10))
 
 
-# Module-level singleton (wired into DI in app.user.dependencies).
+# Module-level singleton (wired into DI in app.iam.dependencies).
 user_query_service = UserQueryService(user_crud=user_crud)

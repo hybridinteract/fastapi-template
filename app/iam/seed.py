@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, engine
 from app.core.logging import get_logger
-from app.user import extensions
-from app.user.permission_management.models import Permission, Role, RolePermission
-from app.user.permissions import (
+from app.iam import extensions
+from app.iam.permission.models import Permission, Role, RolePermission
+from app.iam.permission_catalog import (
     PLATFORM_PERMISSIONS,
     PLATFORM_ROLES,
     PLATFORM_ROLE_PERMISSIONS,
@@ -107,7 +107,7 @@ async def run_seed_operations(session: AsyncSession) -> None:
     if rp: logger.info(f"Created {rp} core role-permission links")
 
     # 2. Provider permissions (importing here ensures providers are registered)
-    from app.user.auth.providers import PROVIDERS
+    from app.iam.auth.providers import PROVIDERS
     provider_perms = []
     provider_role_mappings: dict[str, list[str]] = {}
     for prov in PROVIDERS:
@@ -147,7 +147,7 @@ async def run_seed(dispose_engine: bool = True) -> None:
 
 
 def main() -> None:
-    """Entry point for `python -m app.user.seed`."""
+    """Entry point for `python -m app.iam.seed`."""
     try:
         asyncio.run(run_seed())
     except KeyboardInterrupt:

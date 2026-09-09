@@ -14,14 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionDep
 from app.core.utils import utc_now
-from app.user.auth.activity import ActivityAction, log_activity
-from app.user.auth.crud import PhoneOTPCRUD, phone_otp_crud
-from app.user.auth.exceptions import InvalidOTPError, TooManyOTPAttemptsError
-from app.user.auth.providers import Provider
-from app.user.auth.schemas import OTPRequestSchema, OTPVerifySchema, TokenResponse
-from app.user.auth.services import AccountProvisioningService, TokenService
-from app.user.config import auth_config
-from app.user.dependencies import (
+from app.iam.auth.activity import ActivityAction, log_activity
+from app.iam.auth.crud import PhoneOTPCRUD, phone_otp_crud
+from app.iam.auth.exceptions import InvalidOTPError, TooManyOTPAttemptsError
+from app.iam.auth.providers import Provider
+from app.iam.auth.schemas import OTPRequestSchema, OTPVerifySchema, TokenResponse
+from app.iam.auth.services import AccountProvisioningService, TokenService
+from app.iam.config import auth_config
+from app.iam.dependencies import (
     AccountProvisioningServiceDep,
     TokenServiceDep,
 )

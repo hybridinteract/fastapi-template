@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-from app.user.enums import UserStatus
+from app.iam.enums import UserStatus
 
 
 # ==================== USER BASE ====================
@@ -88,7 +88,7 @@ class AdminUserUpdate(BaseModel):
 # ==================== ROLE ====================
 # RoleResponse is the user-facing role shape, embedded in UserWithRolesResponse.
 # The permission-bearing variant (RoleWithPermissions) and the permission catalog
-# schemas live in app.user.permission_management.schemas.
+# schemas live in app.iam.permission.schemas.
 
 class RoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

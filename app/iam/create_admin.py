@@ -1,16 +1,16 @@
 """
-Interactive super admin creation script.
+Interactive developer admin creation script.
 
-Collects credentials from the terminal and creates a super admin user
-with the super_admin role assigned.
+Collects credentials from the terminal and creates a developer admin user
+with the developer_admin role assigned.
 
 Usage:
-    python -m app.user.create_admin            # Interactive — creates admin only
-    python -m app.user.create_admin --force     # Auto-creates seeded dev/test users
+    python -m app.iam.create_admin            # Interactive — creates admin only
+    python -m app.iam.create_admin --force     # Auto-creates seeded dev/test users
 
 Requires:
     - Database migrations applied
-    - Roles seeded (run `python -m app.user.seed` first)
+    - Roles seeded (run `python -m app.iam.seed` first)
 
 Customization (--force mode):
     Edit the FORCE_USERS list below to define the dev/test accounts your
@@ -29,14 +29,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, engine
 from app.core.logging import get_logger
-from app.user.auth.tokens import get_password_hash
-from app.user.enums import UserStatus
-from app.user.permission_management.models import Role
-from app.user.user.models import User, UserRole
+from app.iam.auth.tokens import get_password_hash
+from app.iam.config import auth_config
+from app.iam.enums import UserStatus
+from app.iam.permission.models import Role
+from app.iam.user.models import User, UserRole
 
 logger = get_logger(__name__)
 
-SUPER_ADMIN_ROLE = "super_admin"
+DEVELOPER_ADMIN_ROLE = auth_config.DEVELOPER_ADMIN_ROLE
 MIN_PASSWORD_LENGTH = 8
 
 # Default password used for --force seeded users.
@@ -52,11 +53,11 @@ _FORCE_PASSWORD = "Dev@12345"
 # ──────────────────────────────────────────────────────────────
 FORCE_USERS = [
     {
-        "full_name": "App Super Admin",
+        "full_name": "App Developer Admin",
         "email": "admin@example.com",
         "password": _FORCE_PASSWORD,
         "phone": None,
-        "role": "super_admin",
+        "role": "developer_admin",
         "is_superuser": True,
     },
     {
@@ -128,10 +129,10 @@ def validate_full_name(name: str) -> str | None:
 
 
 def collect_input() -> dict:
-    """Interactively collect super admin details from the terminal."""
+    """Interactively collect developer admin details from the terminal."""
     print()
     print("=" * 50)
-    print("  Create Super Admin User")
+    print("  Create Developer Admin User")
     print("=" * 50)
     print()
 
@@ -189,7 +190,7 @@ async def _get_role(session: AsyncSession, role_name: str) -> Role:
     role = result.scalar_one_or_none()
     if not role:
         print(f"\n  Error: '{role_name}' role not found in database.")
-        print("  Run `python -m app.user.seed` first to seed roles.")
+        print("  Run `python -m app.iam.seed` first to seed roles.")
         sys.exit(1)
     return role
 
@@ -203,7 +204,7 @@ async def _email_exists(session: AsyncSession, email: str) -> bool:
 
 
 async def create_super_admin(data: dict) -> None:
-    """Create the super admin user in the database."""
+    """Create the developer admin user in the database."""
     async with async_session_factory() as session:
         async with session.begin():
             # Check if email already exists
@@ -221,8 +222,8 @@ async def create_super_admin(data: dict) -> None:
                     print(f"\n  Error: A user with phone '{data['phone']}' already exists.")
                     sys.exit(1)
 
-            # Verify super_admin role exists
-            sa_role = await _get_role(session, SUPER_ADMIN_ROLE)
+            # Verify developer_admin role exists
+            sa_role = await _get_role(session, DEVELOPER_ADMIN_ROLE)
 
             # Create user
             user = User(
@@ -239,13 +240,13 @@ async def create_super_admin(data: dict) -> None:
             session.add(user)
             await session.flush()
 
-            # Assign super_admin role
+            # Assign developer_admin role
             session.add(UserRole(user_id=user.id, role_id=sa_role.id))
             await session.flush()
 
     print()
     print("-" * 50)
-    print("  Super admin created successfully!")
+    print("  Developer admin created successfully!")
     print(f"  Email: {data['email']}")
     print(f"  Name:  {data['full_name']}")
     print("-" * 50)
@@ -333,7 +334,7 @@ async def _run_force() -> None:
 
 
 def main() -> None:
-    """Entry point for `python -m app.user.create_admin`."""
+    """Entry point for `python -m app.iam.create_admin`."""
     force = "--force" in sys.argv
 
     if force:
@@ -357,7 +358,7 @@ def main() -> None:
         except SystemExit:
             raise
         except Exception as e:
-            logger.error(f"Failed to create super admin: {e}")
+            logger.error(f"Failed to create developer admin: {e}")
             print(f"\n  Error: {e}")
             sys.exit(1)
 

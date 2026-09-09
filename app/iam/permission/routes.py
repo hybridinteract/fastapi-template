@@ -9,8 +9,8 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.core.database import SessionDep
-from app.user.dependencies import PermissionServiceDep, SuperUserDep
-from app.user.permission_management.schemas import (
+from app.iam.dependencies import PermissionServiceDep, SuperUserDep
+from app.iam.permission.schemas import (
     PermissionResponse,
     RoleWithPermissions,
     UpdateRolePermissionsRequest,

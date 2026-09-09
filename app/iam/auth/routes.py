@@ -3,13 +3,13 @@
 from fastapi import APIRouter
 
 from app.core.database import SessionDep
-from app.user.auth.schemas import (
+from app.iam.auth.schemas import (
     LogoutRequest,
     MeResponse,
     TokenRefresh,
     TokenResponse,
 )
-from app.user.dependencies import (
+from app.iam.dependencies import (
     CurrentUserDep,
     TokenServiceDep,
     UserServiceDep,

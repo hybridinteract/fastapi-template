@@ -1,7 +1,7 @@
 """Token primitives — password hashing, JWT encode/decode, refresh token bytes.
 
 Lifecycle operations (issue / refresh / revoke) live on ``TokenService`` in
-``app.user.auth.services``. This module is dependency-free of CRUD/session
+``app.iam.auth.services``. This module is dependency-free of CRUD/session
 so it can be imported anywhere.
 
 Hashing uses pwdlib (Argon2 for new hashes, bcrypt retained for verification
@@ -22,7 +22,7 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 from pwdlib.hashers.bcrypt import BcryptHasher
 
 from app.core.settings import settings
-from app.user.config import auth_config
+from app.iam.config import auth_config
 
 # Order matters: the first hasher hashes new passwords, every hasher is tried
 # when verifying. Argon2 is the algorithm FastAPI recommends; BcryptHasher is

@@ -1,7 +1,7 @@
 """User services — self-service and admin user management.
 
 Per conventions §4: Services own commit/rollback; CRUD never commits.
-Services receive CRUD via constructor (wired in ``app.user.dependencies``).
+Services receive CRUD via constructor (wired in ``app.iam.dependencies``).
 """
 
 from typing import List, Optional
@@ -11,17 +11,17 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.user.auth.activity import ActivityAction, log_activity
-from app.user.auth.crud import OAuthAccountCRUD
-from app.user.auth.schemas import MeResponse
-from app.user.auth.tokens import get_password_hash
-from app.user.enums import UserStatus
-from app.user.exceptions import UserAlreadyExistsError, UserNotFoundError
-from app.user.permission_management.crud import RoleCRUD
-from app.user.user.models import User
-from app.user.user.crud import UserCRUD
-from app.user.user.query_service import UserQueryService
-from app.user.user.schemas import (
+from app.iam.auth.activity import ActivityAction, log_activity
+from app.iam.auth.crud import OAuthAccountCRUD
+from app.iam.auth.schemas import MeResponse
+from app.iam.auth.tokens import get_password_hash
+from app.iam.enums import UserStatus
+from app.iam.exceptions import UserAlreadyExistsError, UserNotFoundError
+from app.iam.permission.crud import RoleCRUD
+from app.iam.user.models import User
+from app.iam.user.crud import UserCRUD
+from app.iam.user.query_service import UserQueryService
+from app.iam.user.schemas import (
     AdminUserCreate,
     AdminUserUpdate,
     UserListResponse,
@@ -109,7 +109,7 @@ class AdminService:
     """Admin user management + role assignment to users (bucket 3).
 
     Role/permission *catalog* management lives in
-    ``app.user.permission_management.services.PermissionService``.
+    ``app.iam.permission.services.PermissionService``.
     """
 
     def __init__(

@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.user.auth.providers import PROVIDERS
-from app.user.auth.routes import router as _core_router
+from app.iam.auth.providers import PROVIDERS
+from app.iam.auth.routes import router as _core_router
 
 
 def build_auth_router(prefix: str = "/auth") -> APIRouter:

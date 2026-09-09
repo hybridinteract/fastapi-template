@@ -1,7 +1,7 @@
 """User-domain exceptions.
 
 Auth-specific exceptions (credentials, tokens, OTP, provider failures) live in
-``app.user.auth.exceptions`` — import them from there directly.
+``app.iam.auth.exceptions`` — import them from there directly.
 """
 
 from fastapi import HTTPException, status

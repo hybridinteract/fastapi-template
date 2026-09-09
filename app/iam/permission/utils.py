@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists as sql_exists
 from app.core.database import get_session
 from app.core.logging import get_logger
-from app.user.auth.current_user import get_current_user
-from app.user.permission_management.models import Permission, Role, RolePermission
-from app.user.user.models import User as UserModel, UserRole
+from app.iam.auth.current_user import get_current_user
+from app.iam.config import auth_config
+from app.iam.permission.models import Permission, Role, RolePermission
+from app.iam.user.models import User as UserModel, UserRole
 
 logger = get_logger(__name__)
 
-SUPER_ADMIN_ROLE = "super_admin"
+DEVELOPER_ADMIN_ROLE = auth_config.DEVELOPER_ADMIN_ROLE
 
 
 class BasePermissionChecker:
@@ -75,7 +76,7 @@ class BasePermissionChecker:
         query = select(
             sql_exists()
             .where(UserRole.user_id == user_id)
-            .where(Role.name == SUPER_ADMIN_ROLE)
+            .where(Role.name == DEVELOPER_ADMIN_ROLE)
             .where(UserRole.role_id == Role.id)
             .correlate(UserRole, Role)
         )

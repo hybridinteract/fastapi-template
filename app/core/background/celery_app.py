@@ -6,7 +6,7 @@ It follows the application factory pattern and integrates with FastAPI settings.
 
 Task Discovery:
     Tasks are auto-discovered from tasks.py files in each app module:
-    - app/user/tasks.py
+    - app/activity/tasks.py
     - app/product/tasks.py (future)
     - app/order/tasks.py (future)
 
@@ -33,7 +33,7 @@ def get_installed_apps() -> list:
     a list of module paths for Celery autodiscovery.
 
     Returns:
-        list: List of app module paths (e.g., ['app.user', 'app.product'])
+        list: List of app module paths (e.g., ['app.activity', 'app.product'])
     """
     # Go up from app/core/background/celery_app.py to app/
     # __file__ = app/core/background/celery_app.py

@@ -9,19 +9,19 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.user.auth.current_user import (
+from app.iam.auth.current_user import (
     CurrentUserDep,
     SuperUserDep,
     get_current_active_superuser,
     get_current_user,
 )
-from app.user.auth.services import AccountProvisioningService, TokenService
-from app.user.auth.crud import oauth_account_crud, refresh_token_crud
-from app.user.permission_management.crud import permission_crud, role_crud
-from app.user.permission_management.services import PermissionService
-from app.user.user.crud import user_crud
-from app.user.user.query_service import UserQueryService, user_query_service
-from app.user.user.services import AdminService, UserService
+from app.iam.auth.services import AccountProvisioningService, TokenService
+from app.iam.auth.crud import oauth_account_crud, refresh_token_crud
+from app.iam.permission.crud import permission_crud, role_crud
+from app.iam.permission.services import PermissionService
+from app.iam.user.crud import user_crud
+from app.iam.user.query_service import UserQueryService, user_query_service
+from app.iam.user.services import AdminService, UserService
 
 
 # ── Service factories ─────────────────────────────────────────────────────────

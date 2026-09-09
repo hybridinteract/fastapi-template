@@ -159,6 +159,67 @@ Defect fixes and the Tier 3 capability work. Detail in `docs/MODERNIZATION.md`.
 
 ---
 
+## [2.0.0] — 2026-09-09
+
+The `user` module becomes `iam`. Breaking for every project built on the template:
+import paths change, and the bypass role is renamed. No schema migration —
+see Notes.
+
+### Changed
+
+- **`app/user/` → `app/iam/`** — "IAM" (identity and access management) names what
+  the module actually does. It holds authentication, user accounts *and* RBAC;
+  `user` named only one of the three. Adopted from the naming already in use in
+  the most advanced downstream project, so work flows between them without a
+  translation step
+- **`permission_management/` → `permission/`** and **`permissions.py` →
+  `permission_catalog.py`** — the catalogue is a list of constants, not the guards;
+  the old names had this backwards
+- 💥 **`super_admin` role renamed to `developer_admin`.** `SUPER_ADMIN_ROLE` →
+  `DEVELOPER_ADMIN_ROLE`, and it is now defined **once** in `iam/config.py` with
+  `permission/utils.py` and `create_admin.py` deriving from it — previously the
+  same string was hardcoded in all three
+- **Illustrative docstrings corrected** — `app/core/background/*` and
+  `app/core/cache/examples.py` cited `app.user.tasks` / `app/user/services.py`,
+  paths that never existed. They now point at real modules or clearly hypothetical ones
+
+### Added
+
+- **`app/iam/iam_doc/how-it-works.md`** — one-page tour of the module: the tables,
+  the providers, tokens, the role model, and how the seed's three passes work
+- **Migration `3c6589de23bb`** — data-only, renames the seeded role
+
+### Upgrade
+
+1. `from app.user import X` → `from app.iam import X`;
+   `app.user.permission_management` → `app.iam.permission`;
+   `app.user.permissions` → `app.iam.permission_catalog`
+2. **Run `alembic upgrade head` before starting the app.** This is not optional
+   if you have existing data — see Notes
+3. `SUPER_ADMIN_ROLE` → `DEVELOPER_ADMIN_ROLE` in `.env` if you overrode it
+4. Check for **relative** imports of the module — `from ..user.seed import run_seed`
+   in `app/core/main.py` was one, and a search for `app.user` will not find it
+
+### Notes
+
+- **The module rename needs no schema migration.** All nine table names are
+  unchanged (`users`, `roles`, `permissions`, `role_permissions`, `user_roles`,
+  `refresh_tokens`, `oauth_accounts`, `phone_otps`), verified by diffing the
+  SQLAlchemy metadata before and after — 127 lines of table, column, index and
+  constraint definitions, identical
+- **The role rename does need one.** `seed.py` is additive: it creates roles it
+  cannot find and never renames. Without migration `3c6589de23bb`, an upgraded
+  project gets a fresh `developer_admin` row beside the old `super_admin` one
+  while existing admins stay on `super_admin` — silently losing their bypass,
+  with nothing failing loudly. The migration handles all three states: rename in
+  place, merge when both exist, no-op on a fresh database
+- **Symbol names deliberately unchanged** — `SuperUserDep`, `is_super_admin()` and
+  `create_super_admin()` keep their names, matching the downstream module this
+  rename came from. Only the role string and the `*_ROLE` constant changed
+- Route surface is byte-identical: the same 32 paths before and after
+
+---
+
 <!-- Template: copy this block when creating a new release -->
 <!--
 ## [X.Y.Z] — YYYY-MM-DD

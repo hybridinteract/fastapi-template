@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.user.user.schemas import RoleResponse
+from app.iam.user.schemas import RoleResponse
 
 
 class PermissionResponse(BaseModel):

@@ -7,7 +7,7 @@ from .utils import (
     has_permission,
     is_super_admin,
     PermissionChecker,
-    SUPER_ADMIN_ROLE,
+    DEVELOPER_ADMIN_ROLE,
     BasePermissionChecker,
 )
 
@@ -18,6 +18,6 @@ __all__ = [
     "has_permission",
     "is_super_admin",
     "PermissionChecker",
-    "SUPER_ADMIN_ROLE",
+    "DEVELOPER_ADMIN_ROLE",
     "BasePermissionChecker",
 ]

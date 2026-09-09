@@ -4,7 +4,7 @@ Owns the role/permission *catalog* (bucket 2). Assigning a role *to a user* is a
 user-membership mutation and lives in ``user.services.AdminService`` (bucket 3).
 
 Per conventions §4: this service owns commit/rollback; CRUD never commits.
-Wired in ``app.user.dependencies``.
+Wired in ``app.iam.dependencies``.
 """
 
 from typing import List
@@ -14,13 +14,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.user.config import auth_config
-from app.user.permission_management.crud import PermissionCRUD, RoleCRUD
-from app.user.permission_management.schemas import (
+from app.iam.config import auth_config
+from app.iam.permission.crud import PermissionCRUD, RoleCRUD
+from app.iam.permission.schemas import (
     PermissionResponse,
     RoleWithPermissions,
 )
-from app.user.user.models import User
+from app.iam.user.models import User
 
 logger = get_logger(__name__)
 
@@ -52,10 +52,10 @@ class PermissionService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Role not found"
             )
-        if role.name == auth_config.SUPER_ADMIN_ROLE:
+        if role.name == auth_config.DEVELOPER_ADMIN_ROLE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot modify {auth_config.SUPER_ADMIN_ROLE} permissions",
+                detail=f"Cannot modify {auth_config.DEVELOPER_ADMIN_ROLE} permissions",
             )
 
         await self.permission_crud.replace_role_permissions(

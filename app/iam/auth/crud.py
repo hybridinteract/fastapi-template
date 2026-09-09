@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crud import CRUDBase
 from app.core.utils import utc_now
-from app.user.auth.models import OAuthAccount, PhoneOTP, RefreshToken
+from app.iam.auth.models import OAuthAccount, PhoneOTP, RefreshToken
 
 
 # ── RefreshToken ──────────────────────────────────────────────────────────────

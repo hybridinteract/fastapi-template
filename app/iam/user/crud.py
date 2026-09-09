@@ -1,6 +1,6 @@
 """User-domain CRUD — User account data access. Never commits.
 
-Role/Permission CRUD lives in ``app.user.permission_management.crud``.
+Role/Permission CRUD lives in ``app.iam.permission.crud``.
 """
 
 from typing import List, Optional
@@ -12,10 +12,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.crud import CRUDBase
 from app.core.utils import utc_now
-from app.user.enums import UserStatus
-from app.user.permission_management.models import Role
-from app.user.user.models import User
-from app.user.user.schemas import UserCreate, UserUpdate
+from app.iam.enums import UserStatus
+from app.iam.permission.models import Role
+from app.iam.user.models import User
+from app.iam.user.schemas import UserCreate, UserUpdate
 
 
 # ── User ──────────────────────────────────────────────────────────────────────

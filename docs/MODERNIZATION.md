@@ -22,7 +22,7 @@ Bringing the template in line with the **official FastAPI agent skill**
 
 ### 1. `python-jose` → **PyJWT** 🔐
 
-**Files:** `app/user/auth/tokens.py`, `pyproject.toml`
+**Files:** `app/iam/auth/tokens.py`, `pyproject.toml`
 
 python-jose is effectively unmaintained (last meaningful release 2021, open advisories around
 algorithm confusion). FastAPI's official security tutorial moved to PyJWT.
@@ -51,7 +51,7 @@ project using asymmetric signing.
 
 ### 2. `passlib` + pinned `bcrypt<5` → **pwdlib[argon2,bcrypt]** 🔐
 
-**Files:** `app/user/auth/tokens.py`, `pyproject.toml`
+**Files:** `app/iam/auth/tokens.py`, `pyproject.toml`
 
 passlib 1.7.4 (2020) is unmaintained and reads `bcrypt.__about__`, which **bcrypt 5.x removed**.
 The old `bcrypt>=4.0.1,<5.0.0` pin existed solely to keep a dead library alive. FastAPI's docs
@@ -91,7 +91,7 @@ datetime, so every error-response `timestamp` was unmarked UTC. Now uses the exi
 
 ### 4. Ellipsis defaults removed — 11 call sites
 
-**Files:** `app/core/settings.py` (5), `app/user/auth/schemas.py` (4), `app/user/user/schemas.py` (2)
+**Files:** `app/core/settings.py` (5), `app/iam/auth/schemas.py` (4), `app/iam/user/schemas.py` (2)
 
 Required by the skill's `pydantic.md` and already banned by our own conventions §19.
 
@@ -133,7 +133,7 @@ Three fixes required code changes, not just prose.
 |---|---|---|
 | `ListParams` is now `frozen=True` | `app/core/schemas.py` | §10 asserted "Pydantic models are immutable" — they were **not**. Mutation now raises, so the rule is enforced instead of merely stated. `model_copy(update={...})` is the documented override idiom. Verified query binding and validation are unaffected. |
 | `get_session()` docstring rewritten | `app/core/database.py` | It taught `session: AsyncSession = Depends(get_session)` — the inline anti-pattern §5 bans — inside the very file that defines `SessionDep`. Now also documents why the default `scope="request"` matters (lazy-loaded ORM attributes resolve during serialization). |
-| `raise ... from None` on the JWT 401 | `app/user/auth/tokens.py` | Caught by the new `B904` rule. Prevents the JWT failure reason from leaking into the traceback chain. |
+| `raise ... from None` on the JWT 401 | `app/iam/auth/tokens.py` | Caught by the new `B904` rule. Prevents the JWT failure reason from leaking into the traceback chain. |
 
 ### Toolchain — §1 is now true, not aspirational
 

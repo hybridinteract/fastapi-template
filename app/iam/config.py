@@ -22,7 +22,7 @@ class AuthConfig(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS:   int = 7
 
     # RBAC
-    SUPER_ADMIN_ROLE: str = "super_admin"
+    DEVELOPER_ADMIN_ROLE: str = "developer_admin"
 
     # User query cache (read-through TTLs; gated globally by settings.CACHE_ENABLED)
     USER_CACHE_TTL_SECONDS:           int = 900   # single-user lookups (15 min)

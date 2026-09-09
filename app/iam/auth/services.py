@@ -1,7 +1,7 @@
 """Auth services — token lifecycle and shared account provisioning.
 
 Per conventions §4: Services own commit/rollback; CRUD never commits.
-Services receive CRUD via constructor (wired in ``app.user.dependencies``).
+Services receive CRUD via constructor (wired in ``app.iam.dependencies``).
 """
 
 from datetime import timedelta
@@ -12,19 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.utils import utc_now
-from app.user.auth.activity import ActivityAction, log_activity
-from app.user.auth.crud import OAuthAccountCRUD, RefreshTokenCRUD
-from app.user.auth.exceptions import InactiveUserError, InvalidTokenError
-from app.user.auth.schemas import TokenResponse
-from app.user.auth.tokens import (
+from app.iam.auth.activity import ActivityAction, log_activity
+from app.iam.auth.crud import OAuthAccountCRUD, RefreshTokenCRUD
+from app.iam.auth.exceptions import InactiveUserError, InvalidTokenError
+from app.iam.auth.schemas import TokenResponse
+from app.iam.auth.tokens import (
     create_access_token,
     generate_refresh_token_raw,
     hash_token,
 )
-from app.user.config import auth_config
-from app.user.enums import UserStatus
-from app.user.user.models import User
-from app.user.user.crud import UserCRUD
+from app.iam.config import auth_config
+from app.iam.enums import UserStatus
+from app.iam.user.models import User
+from app.iam.user.crud import UserCRUD
 
 logger = get_logger(__name__)
 

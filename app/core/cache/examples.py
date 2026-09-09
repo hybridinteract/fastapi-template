@@ -301,7 +301,7 @@ async def warm_up_cache():
 """
 To use this cache system in your existing modules:
 
-1. In app/user/services.py:
+1. In app/iam/user/services.py:
    
    from app.core.cache import cached, cache_invalidate_pattern
    
@@ -329,7 +329,7 @@ To use this cache system in your existing modules:
            await cache.set(f"provider:{provider_id}", provider, ttl=1800)
        return provider
 
-3. For bulk operations in app/user/crud.py:
+3. For bulk operations in app/iam/user/crud.py:
    
    from app.core.cache import cache
    

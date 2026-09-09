@@ -11,8 +11,8 @@ from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.user.permission_management.models import Permission, Role, RolePermission
-from app.user.user.models import UserRole
+from app.iam.permission.models import Permission, Role, RolePermission
+from app.iam.user.models import UserRole
 
 
 # ── Role ────────────────────────────────────────────────────────────────────────

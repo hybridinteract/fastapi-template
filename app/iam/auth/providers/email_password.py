@@ -11,30 +11,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionDep
 from app.core.logging import get_logger
 from app.core.utils import utc_now
-from app.user.auth.activity import ActivityAction, log_activity
-from app.user.auth.exceptions import (
+from app.iam.auth.activity import ActivityAction, log_activity
+from app.iam.auth.exceptions import (
     InvalidCredentialsError,
     PasswordLoginUnavailableError,
 )
-from app.user.auth.providers import Provider
-from app.user.auth.schemas import (
+from app.iam.auth.providers import Provider
+from app.iam.auth.schemas import (
     ChangePasswordRequest,
     TokenResponse,
     UserLogin,
 )
-from app.user.auth.services import TokenService, assert_user_active
-from app.user.auth.tokens import (
+from app.iam.auth.services import TokenService, assert_user_active
+from app.iam.auth.tokens import (
     DUMMY_PASSWORD_HASH,
     get_password_hash,
     verify_and_update_password,
     verify_password,
 )
-from app.user.dependencies import CurrentUserDep, TokenServiceDep
-from app.user.exceptions import UserAlreadyExistsError
-from app.user.user.models import User
-from app.user.user.crud import UserCRUD, user_crud
-from app.user.user.query_service import UserQueryService
-from app.user.user.schemas import UserCreate, UserResponse
+from app.iam.dependencies import CurrentUserDep, TokenServiceDep
+from app.iam.exceptions import UserAlreadyExistsError
+from app.iam.user.models import User
+from app.iam.user.crud import UserCRUD, user_crud
+from app.iam.user.query_service import UserQueryService
+from app.iam.user.schemas import UserCreate, UserResponse
 
 logger = get_logger(__name__)
 

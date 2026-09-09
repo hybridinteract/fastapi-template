@@ -13,7 +13,7 @@ Two main decorators:
 2. @db_task - For tasks with async database operations (includes batch utilities)
 
 Example:
-    @simple_task(name="app.user.tasks.send_email", retry_policy="high_priority")
+    @simple_task(name="app.notifications.tasks.send_email", retry_policy="high_priority")
     def send_email(ctx: TaskContext, email: str):
         ctx.log_info(f"Sending email to {email}")
         # ... send email ...
@@ -46,7 +46,7 @@ def simple_task(
     - Metrics tracking
 
     Args:
-        name: Full task name (e.g., "app.user.tasks.send_email")
+        name: Full task name (e.g., "app.notifications.tasks.send_email")
         retry_policy: Name of retry policy from retry.py (default: "standard")
         queue: Queue name for priority routing (default: "default")
             Options: "default", "high_priority", "low_priority"
@@ -58,7 +58,7 @@ def simple_task(
     Example:
         # High priority task (OTP, password reset)
         @simple_task(
-            name="app.user.tasks.send_otp",
+            name="app.notifications.tasks.send_otp",
             retry_policy="aggressive",
             queue="high_priority"
         )

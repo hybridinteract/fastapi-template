@@ -14,7 +14,7 @@ from .middleware import setup_middleware
 from .logging import setup_logging, get_logger
 from .metrics import instrumentator
 from ..apis.v1 import router as api_v1_router
-from ..user.seed import run_seed
+from ..iam.seed import run_seed
 
 logger = get_logger(__name__)
 

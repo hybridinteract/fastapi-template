@@ -9,7 +9,7 @@ class ExtraUserFieldsMixin:
         # In downstream project's models.py:
         from sqlalchemy.orm import Mapped, mapped_column
         from sqlalchemy import String
-        from app.user.user.models import User
+        from app.iam.user.models import User
 
         class ProjectUser(User):
             __tablename__ = "users"

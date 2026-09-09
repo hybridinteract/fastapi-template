@@ -9,10 +9,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from app.core.database import SessionDep
-from app.user.auth.tokens import decode_token
-from app.user.config import auth_config
-from app.user.enums import UserStatus
-from app.user.user.models import User
+from app.iam.auth.tokens import decode_token
+from app.iam.config import auth_config
+from app.iam.enums import UserStatus
+from app.iam.user.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/password/login")
 
@@ -39,9 +39,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Deferred import: user.crud transitively pulls permission_management,
+    # Deferred import: user.crud transitively pulls the permission package,
     # whose __init__ imports this module. Importing here breaks the cycle.
-    from app.user.user.crud import user_crud
+    from app.iam.user.crud import user_crud
 
     user = await user_crud.get_user_with_roles(session, user_id)
     if not user or user.is_deleted:
@@ -70,7 +70,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 async def get_current_active_superuser(current_user: CurrentUserDep) -> User:
     if current_user.is_superuser:
         return current_user
-    if any(r.name == auth_config.SUPER_ADMIN_ROLE for r in current_user.roles):
+    if any(r.name == auth_config.DEVELOPER_ADMIN_ROLE for r in current_user.roles):
         return current_user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

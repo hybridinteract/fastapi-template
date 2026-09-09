@@ -34,7 +34,7 @@ These matter because the AI conventions should **reuse** them, not duplicate the
 | Celery + retry/circuit-breaker | `app/core/background/internals/` | Long-running agent workflows reuse this instead of a new orchestration engine |
 | Redis cache abstraction | `app/core/cache/` | Reuse for rate limiting / usage caps on agent calls |
 | Append-only audit log | `app/activity/` (`ActivityLog`: actor_id, action, resource_type/id, details JSONB) | Agent actions should log here too — see open question in §7 |
-| RBAC, `resource:action[:scope]` permissions | `app/user/permission_management/` | Extend with an agent-specific permission namespace |
+| RBAC, `resource:action[:scope]` permissions | `app/iam/permission/` | Extend with an agent-specific permission namespace |
 | SSE / JSON-lines streaming | `docs/PROJECT_CONVENTIONS.md` §15 | Already the right primitive for streaming agent tokens — no new infra needed |
 | Pydantic v2 everywhere, `ty` type checking | whole stack | Strong argument for a typed-agent framework over a loosely-typed one |
 | `pytest-asyncio` test setup | `pyproject.toml` | Framework choice should offer a way to test agents without live LLM calls |
@@ -183,5 +183,5 @@ AI_PENDING_ACTION_EXPIRY_MINUTES: int = 60
       a read tool and a mutating tool, end to end including the `PendingAgentAction` approval flow
 - [ ] Write `docs/AI_AGENT_CONVENTIONS.md` following the same format as `docs/PROJECT_CONVENTIONS.md`
       (tech stack table, naming conventions, layered architecture rules, checklist, hard rules)
-- [ ] Add `PERMISSIONS` entries for agent scopes to `app/user/seed.py`
+- [ ] Add `PERMISSIONS` entries for agent scopes to `app/iam/seed.py`
 - [ ] Decide observability rollout (Prometheus-only now vs. Langfuse from the start)

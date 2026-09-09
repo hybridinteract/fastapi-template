@@ -38,7 +38,7 @@ class TaskLogger:
         Initialize task logger.
 
         Args:
-            task_name: Name of the Celery task (e.g., "app.user.tasks.send_email")
+            task_name: Name of the Celery task (e.g., "app.notifications.tasks.send_email")
             task_id: Unique task execution ID from Celery
             retry_count: Current retry attempt (0 for first attempt)
         """

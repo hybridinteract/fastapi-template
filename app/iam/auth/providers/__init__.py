@@ -15,7 +15,7 @@ from importlib import import_module
 
 from fastapi import APIRouter
 
-from app.user.config import auth_config
+from app.iam.config import auth_config
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ PROVIDERS: list[Provider] = []
 
 def _register(module_name: str) -> None:
     """Import a provider module and append its ``provider`` to PROVIDERS."""
-    mod = import_module(f"app.user.auth.providers.{module_name}")
+    mod = import_module(f"app.iam.auth.providers.{module_name}")
     PROVIDERS.append(mod.provider)
 
 

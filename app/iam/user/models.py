@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.models import Base
 from app.core.utils import utc_now
-from app.user.enums import UserStatus
+from app.iam.enums import UserStatus
 
 
 class User(Base):

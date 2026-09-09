@@ -4,7 +4,7 @@ Core platform permissions and roles.
 
 PLATFORM_ROLES = [
     {
-        "name": "super_admin",
+        "name": "developer_admin",
         "description": "Full system access. Bypasses all permission checks.",
         "is_system": True,
     },
@@ -49,7 +49,7 @@ PLATFORM_PERMISSIONS: list[tuple[str, str, str]] = [
 ]
 
 PLATFORM_ROLE_PERMISSIONS: dict[str, list[str]] = {
-    "super_admin": [f"{r}:{a}" for r, a, _ in PLATFORM_PERMISSIONS],
+    "developer_admin": [f"{r}:{a}" for r, a, _ in PLATFORM_PERMISSIONS],
     "admin": [
         "users:create",
         "users:read",

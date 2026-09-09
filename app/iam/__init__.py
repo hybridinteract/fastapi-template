@@ -11,7 +11,7 @@ external symbols the module depends on are:
     app.activity.activity (optional)    (activity-log adapter, no-op if absent)
 
 To wire into a host app:
-    from app.user import auth_router, user_router, admin_router, rbac_router, run_seed
+    from app.iam import auth_router, user_router, admin_router, rbac_router, run_seed
     api.include_router(auth_router)
     api.include_router(user_router)
     api.include_router(admin_router)
@@ -19,7 +19,7 @@ To wire into a host app:
     # in lifespan startup: await run_seed_operations(session)
 
 Public API:
-    from app.user import (
+    from app.iam import (
         User, Role, Permission,
         auth_router, user_router, admin_router,
         AuthConfig, auth_config,
@@ -31,23 +31,23 @@ Public API:
     )
 """
 
-from app.user.auth import auth_router, build_auth_router
-from app.user.auth.current_user import CurrentUserDep, SuperUserDep
-from app.user.auth.providers import PROVIDERS, Provider
-from app.user.config import AuthConfig, auth_config
-from app.user.extensions import ExtraUserFieldsMixin
-from app.user.permission_management.models import Permission, Role
-from app.user.user.models import User
-from app.user.permission_management import (
+from app.iam.auth import auth_router, build_auth_router
+from app.iam.auth.current_user import CurrentUserDep, SuperUserDep
+from app.iam.auth.providers import PROVIDERS, Provider
+from app.iam.config import AuthConfig, auth_config
+from app.iam.extensions import ExtraUserFieldsMixin
+from app.iam.permission.models import Permission, Role
+from app.iam.user.models import User
+from app.iam.permission import (
     has_permission,
     is_super_admin,
     require_all_permissions,
     require_any_permission,
     require_permission,
 )
-from app.user.permission_management.routes import rbac_router
-from app.user.seed import run_seed, run_seed_operations
-from app.user.user.routes import admin_router, user_router
+from app.iam.permission.routes import rbac_router
+from app.iam.seed import run_seed, run_seed_operations
+from app.iam.user.routes import admin_router, user_router
 
 __all__ = [
     # Routers

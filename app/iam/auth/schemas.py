@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-from app.user.enums import UserStatus
+from app.iam.enums import UserStatus
 
 
 class UserLogin(BaseModel):

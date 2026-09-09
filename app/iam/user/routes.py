@@ -9,15 +9,15 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 
 from app.core.database import SessionDep
-from app.user.dependencies import (
+from app.iam.dependencies import (
     AdminServiceDep,
     CurrentUserDep,
     SuperUserDep,
     UserQueryServiceDep,
     UserServiceDep,
 )
-from app.user.enums import UserStatus
-from app.user.user.schemas import (
+from app.iam.enums import UserStatus
+from app.iam.user.schemas import (
     AdminUserCreate,
     AdminUserUpdate,
     AssignRoleRequest,
@@ -115,7 +115,7 @@ async def list_deleted_users(
 
 
 # RBAC catalog endpoints (list roles/permissions, set role permissions) moved to
-# app.user.permission_management.routes (rbac_router), same /users/meta/* paths.
+# app.iam.permission.routes (rbac_router), same /users/meta/* paths.
 
 
 # ── Admin user detail routes ──────────────────────────────────────────────────
