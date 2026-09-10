@@ -1,5 +1,8 @@
 # Modernization Tracker
 
+> Status: **IN PROGRESS** — Tiers 1–3 done, hygiene items open.
+> Last verified against the code: 9 September 2026.
+
 Bringing the template in line with the **official FastAPI agent skill**
 (`fastapi/.agents/skills/fastapi/SKILL.md`) and current library practice.
 

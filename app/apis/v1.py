@@ -7,7 +7,7 @@ Register new module routers here following the existing pattern.
 
 from fastapi import APIRouter
 
-from app.user import auth_router, user_router, admin_router, rbac_router
+from app.iam import auth_router, user_router, admin_router, rbac_router
 from app.activity.routes import router as activity_router
 from app.release_notes.routes import router as release_notes_router
 

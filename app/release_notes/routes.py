@@ -19,7 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Path, Query, status
 
 from app.core.database import SessionDep
-from app.user import CurrentUserDep, SuperUserDep
+from app.iam import CurrentUserDep, SuperUserDep
 from .dependencies import ReleaseNoteServiceDep
 from .schemas import (
     ReleaseNoteCreate,
@@ -73,7 +73,7 @@ async def list_published_release_notes(
     )
 
 
-# ── Admin (super_admin only) ────────────────────────────────────────────────
+# ── Admin (developer_admin only) ────────────────────────────────────────────────
 
 
 @router.get("/all", summary="List all release notes (admin)")

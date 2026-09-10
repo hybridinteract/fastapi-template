@@ -242,8 +242,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.mymodule.schemas import ThingListParams, ThingListResponse
 from app.mymodule.services.thing_service import thing_service
-from app.user.dependencies import get_current_user
-from app.user import User
+from app.iam.dependencies import get_current_user
+from app.iam import User
 
 router = APIRouter(prefix="/things", tags=["Things"])
 

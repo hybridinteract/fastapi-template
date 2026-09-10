@@ -85,13 +85,15 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 │   ├── apis/
 │   │   └── v1.py                    # Aggregates all module routers
 │   │
-│   ├── user/                        # Auth + RBAC (included in template)
-│   │   ├── models.py                # User, Role, Permission, RefreshToken
+│   ├── iam/                         # Identity & access: auth + users + RBAC
+│   │   ├── config.py                # AuthConfig — JWT, providers, role names
+│   │   ├── permission_catalog.py    # Roles + permission constants
 │   │   ├── seed.py                  # Idempotent role/permission seeder
-│   │   ├── auth_management/         # Login, refresh, logout
-│   │   ├── permission_management/   # RBAC + scoped access
-│   │   ├── crud/, schemas/, services/, routes/
-│   │   └── create_admin.py          # Super-admin CLI
+│   │   ├── create_admin.py          # Developer-admin CLI
+│   │   ├── iam_doc/                 # Module documentation
+│   │   ├── auth/                    # Login, refresh, logout, tokens, providers
+│   │   ├── user/                    # User accounts + admin management
+│   │   └── permission/              # Roles, permissions, RBAC guards
 │   │
 │   ├── activity/                    # Append-only audit log (included in template)
 │   ├── release_notes/               # What's New system (included in template)
@@ -331,10 +333,10 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ```
 
 ```python
-# app/user/dependencies.py
+# app/iam/dependencies.py
 from typing import Annotated
 from fastapi import Depends
-from app.user.user.models import User
+from app.iam.user.models import User
 
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 ```
@@ -344,7 +346,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 from typing import Annotated
 from fastapi import Depends
 from app.lead.crud import lead_crud
-from app.user.user.crud import user_crud   # cross-module import lives here
+from app.iam.user.crud import user_crud   # cross-module import lives here
 
 def get_lead_service() -> LeadService:
     return LeadService(lead_crud=lead_crud, user_crud=user_crud)
@@ -506,9 +508,9 @@ class MyModel(Base):
 
 ```python
 from app.core.models import Base
-from app.user.user.models import User, UserRole
-from app.user.permission_management.models import Permission, Role, RolePermission
-from app.user.auth.models import RefreshToken, OAuthAccount, PhoneOTP
+from app.iam.user.models import User, UserRole
+from app.iam.permission.models import Permission, Role, RolePermission
+from app.iam.auth.models import RefreshToken, OAuthAccount, PhoneOTP
 from app.activity.models import ActivityLog
 from app.release_notes.models import ReleaseNote
 # from app.mymodule.models import MyModel   ← add here
@@ -538,11 +540,11 @@ PERMISSIONS = [
 # Stored as: "leads:view", "leads:view:all"
 ```
 
-### Seed script (`app/user/seed.py`)
+### Seed script (`app/iam/seed.py`)
 
 - **Idempotent** — only inserts missing data; safe to re-run
 - Runs automatically on startup via `lifespan` in `main.py`
-- `super_admin` bypasses all permission checks
+- `developer_admin` bypasses all permission checks
 - `is_system=True` roles cannot be deleted via UI
 - All project-specific roles/permissions defined here — nowhere else
 
@@ -871,7 +873,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 □ Implement service (receives CRUD via constructor, owns commit)
 □ Create dependencies.py (wire CRUD → service, declare cross-module deps)
 □ Define domain exceptions in exceptions.py
-□ Add permissions in app/user/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
+□ Add permissions in app/iam/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
 □ Define routes (inject service via Depends(get_<name>_service))
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
@@ -948,7 +950,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 | Question | Answer |
 |----------|--------|
 | Applies to every project? | `app/core/` |
-| Authentication / user management? | `app/user/` |
+| Authentication / user management? | `app/iam/` |
 | Audit trail of events? | `app/activity/` |
 | Version change announcements? | `app/release_notes/` |
 | Feature-specific business logic? | `app/<feature>/services/` |

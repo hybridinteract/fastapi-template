@@ -48,15 +48,15 @@ alembic upgrade head
 ### 5. Seed Database (roles + permissions)
 
 ```bash
-python -m app.user.seed
+python -m app.iam.seed
 ```
 
 > **Note:** Seeding also runs automatically at startup. It is idempotent.
 
-### 6. Create Super Admin
+### 6. Create Developer Admin
 
 ```bash
-python -m app.user.create_admin
+python -m app.iam.create_admin
 ```
 
 ### 7. Start Application
@@ -144,16 +144,18 @@ app/
 ├── apis/
 │   └── v1.py                # Aggregates all module routers
 │
-├── user/                    # Auth + RBAC module
-│   ├── models.py            # User, Role, Permission, RefreshToken
+├── iam/                     # Identity & access: auth + users + RBAC
+│   ├── __init__.py          # Public API exports (routers, deps, guards)
+│   ├── config.py            # AuthConfig — JWT, providers, role names
+│   ├── dependencies.py      # DI wiring (CRUD → Service)
+│   ├── permission_catalog.py # Roles + permission constants ← edit this
 │   ├── seed.py              # Idempotent role/permission seeder ← edit this
-│   ├── create_admin.py      # Interactive super-admin creation CLI
-│   ├── auth_management/     # JWT login, refresh, logout
-│   ├── permission_management/  # RBAC scoped access helpers
-│   ├── crud/                # CRUD for users, roles, permissions, tokens
-│   ├── schemas/             # Pydantic schemas
-│   ├── services/            # Business logic
-│   └── routes/              # FastAPI routers
+│   ├── create_admin.py      # Interactive developer-admin creation CLI
+│   ├── extensions.py        # ExtraUserFieldsMixin for project columns
+│   ├── iam_doc/             # Module documentation
+│   ├── auth/                # Login, refresh, logout, tokens, providers
+│   ├── user/                # User accounts + admin user management
+│   └── permission/          # Roles, permissions, RBAC route guards
 │
 ├── activity/                # Append-only audit log module
 ├── release_notes/           # "What's New" release notes module
@@ -322,7 +324,7 @@ class ProductNotFoundException(HTTPException):
 □ 6. Apply migration      →  alembic upgrade head
 □ 7. Implement CRUD       →  app/<feature>/crud/  (extend CRUDBase)
 □ 8. Implement service    →  app/<feature>/services/
-□ 9. Add permissions      →  app/user/seed.py  (PERMISSIONS + ROLE_PERMISSIONS)
+□ 9. Add permissions      →  app/iam/seed.py  (PERMISSIONS + ROLE_PERMISSIONS)
 □ 10. Define routes       →  app/<feature>/routes/
 □ 11. Register router     →  app/apis/v1.py
 □ 12. Write tests         →  app/<feature>/tests/
