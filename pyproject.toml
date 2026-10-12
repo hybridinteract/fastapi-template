@@ -81,6 +81,27 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
+# ONE marker splits the suite, and the cheap half is the default.
+#
+# Two markers (`unit` + `integration`) was rejected: forgetting to apply one would drop a
+# test out of BOTH tiers, and it would stop running with nothing to show for it. With one
+# marker, forgetting it runs the test in the wrong tier — where it fails loudly against a
+# database that is not there.
+#
+# Apply it per FILE, never per function:  pytestmark = pytest.mark.integration
+#
+#   uv run pytest app/<module>        its fast tests — no database, seconds. The usual run.
+#   uv run pytest app/<module> -m ""  + its database tests
+#   uv run pytest -m ""               everything. This WRITES to the database in .env —
+#                                     treat it as an action, not a check.
+markers = [
+    "integration: needs a live Postgres (and, for route tests, the app's seeds).",
+]
+
+# `-m` prints its deselected count, so the default filter is visible rather than silent.
+# --strict-markers turns a typo'd marker into an error instead of a silently skipped test.
+addopts = "--strict-markers -m 'not integration'"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
