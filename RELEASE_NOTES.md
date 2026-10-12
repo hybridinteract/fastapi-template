@@ -5,6 +5,112 @@ Follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.2.0] — 2026-09-10
+
+Documentation and skills only — **no `app/` behaviour changed**, and `app/iam` was not touched.
+
+### Changed
+- **A module's shape is now chosen, not grown.** A domain module lays each layer out as a folder —
+  `models/`, `schemas/`, `crud/`, `services/`, `routes/` — **from its first commit**. This reverses
+  2.1.0's *"a file becomes a folder when it outgrows itself"*. That rule implies a threshold around
+  600 lines; the largest file in this repo is 354, so it never fired and the decision was being made
+  by accident. Reasoning and the tiebreaker: `docs/DECISIONS.md`, 10 September 2026.
+- **Four named shapes, with a three-question decision procedure**: **flat**, **layered** (the
+  default), **composite** (sub-modules with a declared import rank), **shared kernel** (business
+  primitives, no HTTP surface, no tables). `docs/MODULE_CONVENTIONS.md` §6 holds the contracts;
+  `CLAUDE.md` §1 holds the procedure. The shape and the step that chose it go in the module's
+  `how-it-works.md`.
+- **`app/core/tests/test_module_anatomy.py` is shape-aware.** It reads the shape from the layout and
+  applies that shape's contract — a shared kernel has no `dependencies.py`, a composite may carry
+  `exceptions.py` per sub-module — and additionally checks that a composite keeps **one**
+  `dependencies.py`, `tests/` and `<module>_doc/` at its root. Two new tests; suite is 14, was 12.
+- **`XListParams` moves from `schemas.py` to a flat `list_params.py`** in new modules, so `schemas/`
+  can stay strictly one sibling per entity. `app/activity` predates this and is unchanged.
+- **`/new-module` now decides the shape first** and branches four ways. It carries a
+  `test_module_boundary.py` template, parameterised by the rank list, that resolves relative imports
+  by counting dots and includes a `dependencies.py` constructor-injection check — the one place a
+  rank can invert with no sub-module file importing upward.
+- **`/review-module` gains a shape section**, checked before anything else.
+- `docs/PROJECT_CONVENTIONS.md` §2 and §4 document layer packages and the per-`__init__.py`
+  contracts; §10 documents `list_params.py`.
+
+### Added
+- `models/__init__.py` must re-export **every** model — `alembic_models_import.py` imports the
+  package, so an omission is the same silent failure as an unregistered model, one level down.
+  Recorded in `.claude/rules/models-and-migrations.md`, along with the `TYPE_CHECKING` rule for
+  cross-sibling relationships.
+- `crud/__init__.py` re-exports each class **and** its singleton; `routes/__init__.py` builds no
+  aggregator.
+- `app/core/tests/conventions.py` gains `module_shape()` and `sub_modules()`.
+
+### Known
+- **`app/iam` is a composite module with no rank and no boundary test, and its boundary has already
+  dissolved** — `auth/` imports `user/` in 8 places, `user/services.py` imports `auth/` in 4, held
+  together by one function-local import at `app/iam/auth/current_user.py:44`. Documented in
+  `docs/MODULE_CONVENTIONS.md` §6.2 as the cautionary tale; **not fixed here**. Adding the boundary
+  test before fixing the cycle would ship a test that starts red.
+- **The template still contains no layered module** — every module here predates the rule and is
+  genuinely small. `/new-module` generates the shape; the docs say so rather than hiding it.
+
+## [2.1.0] — 2026-09-09
+
+### Added
+- **`CLAUDE.md`** — a 172-line guardrail, loaded in full by AI coding agents at the start of
+  every session. Capped at 200 lines and enforced by `scripts/check_docs.py`.
+- **`.claude/rules/`** — six path-scoped rule files (layering, routes/DI,
+  models/migrations, permissions, background tasks, tests). Each declares `paths:` in
+  frontmatter and is loaded automatically only when a file it governs is opened, so deep
+  rules cost no context on unrelated work.
+- **`.claude/skills/`** — `/new-module`, `/new-migration`, `/review-module`.
+- **`.claude/settings.json`** and a `PostToolUse` hook that runs `ruff` on the file an agent
+  just edited. Personal settings stay in the now-gitignored `settings.local.json`.
+- **Tests, for the first time.** `app/conftest.py` (supplies the env the app needs at import
+  time) plus four convention tests that enforce rules which otherwise fail silently:
+  Alembic model registration, the layering contract, module anatomy, and router
+  registration order. 12 tests, ~1s, no database.
+- **`scripts/check_docs.py`** — dead relative links, `Last verified against the code:`
+  stamps, `paths:` frontmatter on every rule, and the `CLAUDE.md` line budget.
+- **CI** (`.github/workflows/ci.yml`) and **pre-commit**. CI gates on tests and docs; lint
+  and types are reported non-blocking until the inherited baseline is triaged. `pre-commit` is a
+  dev dependency — run `uv run pre-commit install` once per clone.
+- `docs/MODULE_CONVENTIONS.md` (where code goes), `docs/WRITING_DOCS.md` (the
+  doc-ownership contract), `docs/DECISIONS.md` (append-only), `docs/README.md` (the map),
+  and `docs/guides/`.
+- `app/activity/exceptions.py`, `app/release_notes/exceptions.py`, and module notes at
+  `app/activity/activity_doc/` and `app/release_notes/release_notes_doc/`.
+- A single pytest marker, `integration`, with `addopts = "--strict-markers -m 'not integration'"`.
+
+### Changed
+- **`app/apis/v1.py`: `rbac_router` now registers before `admin_router`.** Both live under
+  `/users`, and FastAPI matches in registration order — with `admin_router` first, adding a
+  `GET /users/{user_id}/roles` would have silently made `GET /users/meta/roles`
+  unreachable. Verified against FastAPI 0.141.1 and covered by
+  `app/apis/tests/test_route_registration.py`.
+- **Services no longer raise raw `HTTPException`.** Nine call sites across
+  `app/iam/user/services.py`, `app/iam/permission/services.py` and
+  `app/release_notes/service.py` now raise named exceptions. New:
+  `PhoneAlreadyInUseError`, `CannotDeleteSelfError`, `UserNotDeletedError`,
+  `RoleNotFoundError`, `ProtectedRoleError`, `ReleaseNoteNotFoundError`,
+  `ReleaseNoteVersionExistsError`. **Status codes and response bodies are unchanged.**
+- `docs/PROJECT_CONVENTIONS.md` is backend-only; the Next.js sections moved to
+  `docs/FRONTEND_CONVENTIONS.md`. Section numbers §1–§21 are unchanged — §16 is kept as a
+  pointer so nothing downstream that cites a section number breaks.
+- `docs/MODERNIZATION.md` → `docs/planning/modernization.md`;
+  `docs/research_and_development/ai/AI_AGENT_INTEGRATION_DISCUSSION.md` →
+  `docs/research/ai-agent-integration.md`.
+- `README.md` trimmed from 365 to 250 lines — the duplicated conventions section was
+  already drifting from `PROJECT_CONVENTIONS.md` and is now a table of links.
+
+### Removed
+- `fcube.py` — a stub that could only ever print "FCube CLI not found". Superseded by the
+  `/new-module` skill. See `docs/DECISIONS.md`.
+- `.agents/skills/` — an empty directory that was never populated.
+
+### Upgrade
+No API changes and no migration. For an existing project built on this template:
+copy `CLAUDE.md`, `.claude/`, `scripts/check_docs.py` and `app/core/tests/`, then run
+`uv run pytest` — the four convention tests will tell you where your project has drifted.
+
 ## [0.1.0] — 2026-03-05
 
 ### 🎉 Initial Template Release
