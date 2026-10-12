@@ -5,7 +5,6 @@ Orchestrates business operations for release notes, enforces rules, controls tra
 CRUD operations do NOT commit — service calls session.commit().
 """
 
-from typing import List, Optional, Tuple
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -13,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.utils import utc_now
+
+from .crud import ReleaseNoteCRUD, release_note_crud
 from .models import ReleaseNote
 from .schemas import ReleaseNoteCreate, ReleaseNoteUpdate
-from .crud import ReleaseNoteCRUD, release_note_crud
 
 logger = get_logger(__name__)
 
@@ -45,7 +45,7 @@ class ReleaseNoteService:
     async def get_latest_published(
         self,
         session: AsyncSession,
-    ) -> Optional[ReleaseNote]:
+    ) -> ReleaseNote | None:
         """Get the most recently published release note. Returns None if none exist."""
         return await self._crud.get_latest_published(session)
 
@@ -54,7 +54,7 @@ class ReleaseNoteService:
         session: AsyncSession,
         skip: int = 0,
         limit: int = 50,
-    ) -> Tuple[List[ReleaseNote], int]:
+    ) -> tuple[list[ReleaseNote], int]:
         """Get published release notes (for all authenticated users)."""
         return await self._crud.get_published_list(session, skip=skip, limit=limit)
 
@@ -63,7 +63,7 @@ class ReleaseNoteService:
         session: AsyncSession,
         skip: int = 0,
         limit: int = 50,
-    ) -> Tuple[List[ReleaseNote], int]:
+    ) -> tuple[list[ReleaseNote], int]:
         """Get all release notes including drafts (admin only)."""
         return await self._crud.get_all_list(session, skip=skip, limit=limit)
 
@@ -85,7 +85,9 @@ class ReleaseNoteService:
             )
 
         note = await self._crud.create_note(
-            session, obj_in=data, created_by=current_user_id,
+            session,
+            obj_in=data,
+            created_by=current_user_id,
         )
 
         await session.commit()

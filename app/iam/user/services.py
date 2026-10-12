@@ -4,7 +4,6 @@ Per conventions §4: Services own commit/rollback; CRUD never commits.
 Services receive CRUD via constructor (wired in ``app.iam.dependencies``).
 """
 
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,8 +17,8 @@ from app.iam.auth.tokens import get_password_hash
 from app.iam.enums import UserStatus
 from app.iam.exceptions import UserAlreadyExistsError, UserNotFoundError
 from app.iam.permission.crud import RoleCRUD
-from app.iam.user.models import User
 from app.iam.user.crud import UserCRUD
+from app.iam.user.models import User
 from app.iam.user.query_service import UserQueryService
 from app.iam.user.schemas import (
     AdminUserCreate,
@@ -46,33 +45,27 @@ class UserService:
         self.oauth_account_crud = oauth_account_crud
         self.user_query_service = user_query_service
 
-    async def get_my_profile(
-        self, session: AsyncSession, user_id: UUID
-    ) -> UserResponse:
+    async def get_my_profile(self, session: AsyncSession, user_id: UUID) -> UserResponse:
         # Read-only path → served from cache; invalidated on any profile mutation.
         profile = await self.user_query_service.get_user_by_id(session, user_id)
         if profile is None:
             raise UserNotFoundError(str(user_id))
         return profile
 
-    async def get_me(
-        self, session: AsyncSession, current_user: User
-    ) -> MeResponse:
+    async def get_me(self, session: AsyncSession, current_user: User) -> MeResponse:
         response = MeResponse.model_validate(current_user)
 
         if current_user.roles:
             response.role = current_user.roles[0].name
             perms: set[str] = set()
             for role in current_user.roles:
-                for p in (role.permissions or []):
+                for p in role.permissions or []:
                     perms.add(p.name)
             response.permissions = sorted(perms)
 
         response.has_password = bool(current_user.hashed_password)
 
-        oauth_accounts = await self.oauth_account_crud.list_for_user(
-            session, current_user.id
-        )
+        oauth_accounts = await self.oauth_account_crud.list_for_user(session, current_user.id)
         linked: list[str] = [acc.provider for acc in oauth_accounts]
         if current_user.hashed_password and "email_password" not in linked:
             linked.insert(0, "email_password")
@@ -128,9 +121,9 @@ class AdminService:
         *,
         skip: int = 0,
         limit: int = 50,
-        role: Optional[str] = None,
-        status_filter: Optional[UserStatus] = None,
-        search: Optional[str] = None,
+        role: str | None = None,
+        status_filter: UserStatus | None = None,
+        search: str | None = None,
     ) -> UserListResponse:
         users, total = await self.user_crud.list_users_paginated(
             session,
@@ -153,7 +146,7 @@ class AdminService:
         *,
         skip: int = 0,
         limit: int = 50,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> UserListResponse:
         users, total = await self.user_crud.list_deleted_users_paginated(
             session, skip=skip, limit=limit, search=search
@@ -194,9 +187,7 @@ class AdminService:
         )
         return UserWithRolesResponse.model_validate(user)
 
-    async def get_user(
-        self, session: AsyncSession, user_id: UUID
-    ) -> UserWithRolesResponse:
+    async def get_user(self, session: AsyncSession, user_id: UUID) -> UserWithRolesResponse:
         user = await self.user_crud.get_user_with_roles(session, user_id)
         if not user:
             raise UserNotFoundError(str(user_id))
@@ -234,9 +225,7 @@ class AdminService:
         )
         return UserWithRolesResponse.model_validate(user)
 
-    async def delete_user(
-        self, session: AsyncSession, user_id: UUID, admin_user: User
-    ) -> None:
+    async def delete_user(self, session: AsyncSession, user_id: UUID, admin_user: User) -> None:
         if user_id == admin_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -307,9 +296,7 @@ class AdminService:
         await session.delete(user)
         await session.commit()
         await UserQueryService.invalidate_user(user_id)
-        logger.warning(
-            f"Admin {admin_user.email} permanently deleted user {user_id}"
-        )
+        logger.warning(f"Admin {admin_user.email} permanently deleted user {user_id}")
 
     # ── Role assignment ───────────────────────────────────────────────────────
 
@@ -317,7 +304,7 @@ class AdminService:
         self,
         session: AsyncSession,
         user_id: UUID,
-        role_ids: List[UUID],
+        role_ids: list[UUID],
         admin_user: User,
     ) -> UserWithRolesResponse:
         user = await self.user_crud.get_user_with_roles(session, user_id)
@@ -355,7 +342,5 @@ class AdminService:
         if not user:
             raise UserNotFoundError(str(user_id))
 
-        logger.info(
-            f"Admin {admin_user.email} removed role {role_id} from user {user_id}"
-        )
+        logger.info(f"Admin {admin_user.email} removed role {role_id} from user {user_id}")
         return UserWithRolesResponse.model_validate(user)
