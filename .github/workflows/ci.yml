@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # app/core/settings.py builds Settings() at import time and required secrets have no
+  # defaults, by design. app/conftest.py supplies throwaway values for pytest; these are
+  # here for the steps that import the app outside pytest.
+  POSTGRES_USER: test
+  POSTGRES_PASSWORD: test
+  POSTGRES_DB: test
+  SECRET_KEY: ci-secret-key-not-used-for-anything-real-0000
+  JWT_SECRET_KEY: ci-jwt-secret-key-not-used-for-anything-real
+
+jobs:
+  # ── The gate. These must stay green. ────────────────────────────────────────────
+  test:
+    name: tests + docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --dev
+
+      - name: Convention tests + fast tier
+        run: uv run pytest -q
+
+      - name: Docs — links, stamps, rule frontmatter, CLAUDE.md budget
+        run: python3 scripts/check_docs.py
+
+  # ── Reported, not enforced. See the note below before making these a gate. ──────
+  #
+  # The template carries several hundred inherited ruff findings and a `ty` baseline
+  # that has never been triaged (docs/planning/modernization.md). Turning either into a
+  # hard gate today means CI is red on the first commit, which teaches everyone to
+  # ignore it — the opposite of what a gate is for.
+  #
+  # New code is kept clean by .pre-commit-config.yaml, which runs on changed files only.
+  # When the baseline reaches zero, delete `continue-on-error` here and this comment.
+  lint:
+    name: lint + types (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --dev
+
+      - name: ruff check
+        continue-on-error: true
+        run: uv run ruff check app
+
+      - name: ruff format --check
+        continue-on-error: true
+        run: uv run ruff format --check app
+
+      - name: ty check
+        continue-on-error: true
+        run: uv run ty check app
+
+  # ── The integration tier. Runs `-m ""`, which needs a live Postgres. ────────────
+  #
+  # The template ships no integration tests yet, so today this re-runs the convention
+  # tests against a database. It is here so the two-tier split is wired up
+  # before the first test that needs it, rather than after.
+  integration:
+    name: integration tier
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --dev
+
+      - name: Migrations apply, and reverse
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_HOST: localhost
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Full suite
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_HOST: localhost
+          REDIS_HOST: localhost
+        run: uv run pytest -m "" -q

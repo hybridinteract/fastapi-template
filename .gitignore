@@ -48,3 +48,7 @@ deploy-v2/generated/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Claude Code — personal, per-machine settings. The shared config (settings.json,
+# rules/, skills/, hooks/) IS committed: it is project configuration, not preference.
+.claude/settings.local.json

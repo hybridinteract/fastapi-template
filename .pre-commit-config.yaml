@@ -1,0 +1,29 @@
+# Deliberately light: this runs on every commit, so it holds only what is fast and
+# only what applies to the files you actually changed.
+#
+# The doc checker and the convention tests are CI's job (.github/workflows/ci.yml) —
+# they need the whole tree to mean anything, and a slow pre-commit is one people disable.
+#
+#   uv run pre-commit install       # once, per clone
+#   uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      # Keeps NEW code clean while the inherited baseline is worked down separately.
+      # See the note in .github/workflows/ci.yml.
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: \.md$          # trailing spaces are meaningful line breaks in markdown
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=512]
