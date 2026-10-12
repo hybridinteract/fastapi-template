@@ -6,7 +6,6 @@ Services receive CRUD via constructor (wired in ``app.iam.dependencies``).
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -15,7 +14,13 @@ from app.iam.auth.crud import OAuthAccountCRUD
 from app.iam.auth.schemas import MeResponse
 from app.iam.auth.tokens import get_password_hash
 from app.iam.enums import UserStatus
-from app.iam.exceptions import UserAlreadyExistsError, UserNotFoundError
+from app.iam.exceptions import (
+    CannotDeleteSelfError,
+    PhoneAlreadyInUseError,
+    UserAlreadyExistsError,
+    UserNotDeletedError,
+    UserNotFoundError,
+)
 from app.iam.permission.crud import RoleCRUD
 from app.iam.user.crud import UserCRUD
 from app.iam.user.models import User
@@ -86,10 +91,7 @@ class UserService:
         updates = update_data.model_dump(exclude_unset=True)
         if "phone" in updates and updates["phone"] != user.phone:
             if await self.user_crud.get_by_phone(session, updates["phone"]):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Phone already in use",
-                )
+                raise PhoneAlreadyInUseError()
 
         user = await self.user_crud.update(session, db_obj=user, obj_in=updates)
         await session.commit()
@@ -227,10 +229,7 @@ class AdminService:
 
     async def delete_user(self, session: AsyncSession, user_id: UUID, admin_user: User) -> None:
         if user_id == admin_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete yourself",
-            )
+            raise CannotDeleteSelfError()
 
         deleted = await self.user_crud.soft_delete(
             session, user_id=user_id, deleted_by=admin_user.id
@@ -256,10 +255,7 @@ class AdminService:
         if not user:
             raise UserNotFoundError(str(user_id))
         if not user.is_deleted:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User is not deleted",
-            )
+            raise UserNotDeletedError()
 
         user.is_deleted = False
         user.deleted_at = None
@@ -285,10 +281,7 @@ class AdminService:
         self, session: AsyncSession, user_id: UUID, admin_user: User
     ) -> None:
         if user_id == admin_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete yourself",
-            )
+            raise CannotDeleteSelfError()
         user = await self.user_crud.get(session, user_id)
         if not user:
             raise UserNotFoundError(str(user_id))

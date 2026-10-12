@@ -7,11 +7,14 @@ CRUD operations do NOT commit — service calls session.commit().
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.utils import utc_now
+from app.release_notes.exceptions import (
+    ReleaseNoteNotFoundError,
+    ReleaseNoteVersionExistsError,
+)
 
 from .crud import ReleaseNoteCRUD, release_note_crud
 from .models import ReleaseNote
@@ -36,10 +39,7 @@ class ReleaseNoteService:
         """Get a single release note by ID. Raises 404 if not found."""
         note = await self._crud.get_by_id(session, note_id)
         if not note:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Release note not found",
-            )
+            raise ReleaseNoteNotFoundError()
         return note
 
     async def get_latest_published(
@@ -79,10 +79,7 @@ class ReleaseNoteService:
         # Check for duplicate version
         existing = await self._crud.get_by_version(session, data.version)
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Release note with version '{data.version}' already exists",
-            )
+            raise ReleaseNoteVersionExistsError(data.version)
 
         note = await self._crud.create_note(
             session,
@@ -111,10 +108,7 @@ class ReleaseNoteService:
         if data.version and data.version != note.version:
             existing = await self._crud.get_by_version(session, data.version)
             if existing:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Release note with version '{data.version}' already exists",
-                )
+                raise ReleaseNoteVersionExistsError(data.version)
 
         updated = await self._crud.update_note(session, db_obj=note, obj_in=data)
         await session.commit()

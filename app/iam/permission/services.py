@@ -9,11 +9,11 @@ Wired in ``app.iam.dependencies``.
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.iam.config import auth_config
+from app.iam.exceptions import ProtectedRoleError, RoleNotFoundError
 from app.iam.permission.crud import PermissionCRUD, RoleCRUD
 from app.iam.permission.schemas import (
     PermissionResponse,
@@ -48,12 +48,9 @@ class PermissionService:
     ) -> RoleWithPermissions:
         role = await self.role_crud.get_with_permissions(session, role_id)
         if not role:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+            raise RoleNotFoundError()
         if role.name == auth_config.DEVELOPER_ADMIN_ROLE:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot modify {auth_config.DEVELOPER_ADMIN_ROLE} permissions",
-            )
+            raise ProtectedRoleError(auth_config.DEVELOPER_ADMIN_ROLE)
 
         await self.permission_crud.replace_role_permissions(session, role_id, permission_ids)
         await session.commit()
