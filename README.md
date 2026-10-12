@@ -179,158 +179,51 @@ docker/                      # Dockerfile + entrypoint scripts
 
 ## 🏛️ Engineering Conventions
 
-> Full standards: [engineering.hybridinteractive.in/standards/project-structure](https://engineering.hybridinteractive.in/standards/project-structure/)
+A **modular monolith** built on Domain-Driven Design: files are grouped by feature
+(`iam/`, `activity/`, `<your feature>/`), never by technical concern. Strict layering —
+`Route → Service → CRUD → Model` — with the service owning the transaction.
 
-This project follows the **Hybrid Interactive Engineering Standards** — a Modular Monolith architecture based on Domain-Driven Design (DDD). Files are grouped by **feature/domain** (e.g., `user/`, `product/`), not by technical concern (not all models in one folder, all routes in another).
+The conventions are not repeated here, because a summary beside the real thing drifts from
+it. Each lives in exactly one place:
 
----
+| Read | For |
+|---|---|
+| **[`CLAUDE.md`](CLAUDE.md)** | The rules that matter most, in ~170 lines. **Start here.** AI agents load it automatically at the start of every session |
+| [`docs/README.md`](docs/README.md) | The map of every other document |
+| [`docs/PROJECT_CONVENTIONS.md`](docs/PROJECT_CONVENTIONS.md) | **How** code is built — 21 numbered sections |
+| [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) | **Where** code goes. Read before creating any module |
+| [`.claude/rules/`](.claude/rules/) | One file per cross-cutting rule. An agent loads each one automatically when it opens a file that rule governs |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | **Why** things are the way they are |
 
-### 1. Architectural Philosophy
+Org-wide standards:
+[engineering.hybridinteractive.in/standards/project-structure](https://engineering.hybridinteractive.in/standards/project-structure/)
 
-| Principle | What It Means Here |
-|-----------|-------------------|
-| **Separation of Concerns** | HTTP routing, business logic, and database access are strictly decoupled into independent layers |
-| **Dependency Injection** | Use FastAPI `Depends()` to pass sessions, user context, and config — never import them directly in routes |
-| **Async First** | All I/O operations (DB, HTTP, file) must use `async/await` |
-| **Strict Typing** | All inputs/outputs use Pydantic schemas with explicit validation — no raw `dict` returns |
+### Checks
 
----
-
-### 2. Feature Module Structure
-
-Every domain feature lives in its own vertical slice:
-
-```
-app/<feature_name>/
-├── __init__.py          # Module public API — exports only what consumers need
-├── models/              # ORM entity classes defining database tables
-├── schemas/             # Pydantic models for request validation & response shaping
-├── crud/                # Repository layer — exclusively DB interactions
-├── services/            # Business logic — orchestrates crud, cache, external calls
-├── routes/              # FastAPI routers — HTTP interface only
-├── dependencies.py      # Feature-specific FastAPI Depends() providers
-├── enums.py             # Feature-level enums and constants
-├── exceptions.py        # Domain-specific error classes
-├── tasks.py             # Celery background tasks (if applicable)
-└── tests/               # Unit and integration tests for this feature
+```bash
+uv run pytest                    # convention tests + the fast tier
+python3 scripts/check_docs.py    # links, doc freshness, rule frontmatter
+uv run ruff check app            # inherited baseline — see docs/planning/modernization.md
 ```
 
----
+Four tests enforce the rules that otherwise fail **silently**: a model missing from
+`alembic_models_import.py`, a `commit()` in the CRUD layer, a module that does not match the
+contract for its shape, and a router registered in an order that lets `/{id}` swallow its siblings.
+When one fails, fix the code — not the test.
 
-### 3. Layer Responsibilities & Strict Rules
+### Module shapes
 
-#### A. Route Layer (`routes/`)
-- **Purpose:** Parse HTTP inputs → call service → return HTTP response
-- ❌ **NO business logic** — no loops, conditionals, or rule validations
-- ❌ **NO direct DB queries** — never import or call `session.execute()` directly
-- ✅ Rely entirely on `Depends()` for services and DB session
-- ✅ Catch domain exceptions raised by services and map them to HTTP status codes
+A module is one of four shapes, chosen deliberately before the first file — **flat**, **layered**
+(the default for a domain module), **composite** (sub-modules with a declared import rank), or a
+**shared kernel** (business primitives, no HTTP). The decision procedure is three questions:
+[`CLAUDE.md`](CLAUDE.md) §1, in full at
+[`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §6. `/new-module` walks it for you.
 
-```python
-# ✅ Correct route
-@router.post("/leads", response_model=LeadResponse)
-async def create_lead(
-    data: LeadCreate,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission("leads:create")),
-):
-    return await lead_service.create(session, data, created_by=current_user)
-```
+### Working with an AI agent
 
-#### B. Service Layer (`services/`)
-- **Purpose:** Execute business rules, coordinate between crud/cache/external systems
-- ✅ **Owns transaction boundaries** — only services call `session.commit()` or `session.rollback()`
-- ❌ Must be completely agnostic to HTTP — no `Request` or `Response` objects here
-- ✅ Interacts with the DB exclusively through the module's `crud/` instances
-
-```python
-# ✅ Correct service — owns commit
-async def create(self, session: AsyncSession, data: LeadCreate, created_by: User) -> Lead:
-    lead = await lead_crud.create(session, obj_in=data)
-    await session.commit()   # ← service owns this, always
-    return lead
-```
-
-#### C. Data Access Layer (`crud/`)
-- **Purpose:** Encapsulate SQL queries behind clean Python interfaces
-- ✅ Inherit from `app/core/crud.py`'s `CRUDBase` wherever possible
-- ❌ **NEVER call `session.commit()`** — only `session.add()` and `session.flush()`
-- ✅ Methods are purely data-centric — no business conditions or rules
-
-```python
-# ✅ Correct CRUD — flush only, no commit
-async def create(self, session: AsyncSession, *, obj_in: LeadCreate) -> Lead:
-    db_obj = Lead(**obj_in.model_dump())
-    session.add(db_obj)
-    await session.flush()       # ← get DB-generated ID, never commit
-    await session.refresh(db_obj)
-    return db_obj
-```
-
-#### D. Schema Layer (`schemas/`)
-- **Purpose:** Define structured request/response validation
-- ✅ **Split by intent**: `LeadCreate`, `LeadUpdate`, `LeadResponse` — separate classes
-- ✅ Enforce validation rules (string lengths, regex, value bounds) at schema level
-- ❌ Never return raw ORM objects from routes — always use a `Response` schema
-
----
-
-### 4. Implementing a New Feature — Execution Order
-
-Follow this exact sequence (from the engineering standard):
-
-```
-1. schemas/   → Define request, update, and response Pydantic models
-2. models/    → Define the SQLAlchemy ORM model and run migration
-3. crud/      → Implement data access methods (extend CRUDBase)
-4. services/  → Write business logic, call crud, commit transactions
-5. routes/    → Expose HTTP endpoints, inject dependencies, use schemas
-6. tests/     → Write tests covering the new behavior
-```
-
----
-
-### 5. Error Handling Rules
-
-- ❌ **Never** raise a raw `HTTPException(status_code=500)` from inside services or CRUD
-- ✅ Define domain exceptions in the module's `exceptions.py`:
-
-```python
-# app/product/exceptions.py
-from fastapi import HTTPException, status
-
-class ProductNotFoundException(HTTPException):
-    def __init__(self, product_id: str):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product '{product_id}' not found"
-        )
-```
-
-- ✅ Global exception handlers in `app/core/exceptions.py` translate unhandled exceptions to safe HTTP responses
-- ✅ Routes may catch domain exceptions and re-raise or return appropriate responses
-
----
-
-### 6. Adding a New Feature Module — Checklist
-
-```
-□ 1. Create app/<feature>/ with the standard sub-structure
-□ 2. Define schemas first  →  app/<feature>/schemas/
-□ 3. Add ORM model        →  app/<feature>/models/
-□ 4. Register model       →  app/core/alembic_models_import.py
-□ 5. Run migration        →  alembic revision --autogenerate -m "<description>"
-□ 6. Apply migration      →  alembic upgrade head
-□ 7. Implement CRUD       →  app/<feature>/crud/  (extend CRUDBase)
-□ 8. Implement service    →  app/<feature>/services/
-□ 9. Add permissions      →  app/iam/seed.py  (PERMISSIONS + ROLE_PERMISSIONS)
-□ 10. Define routes       →  app/<feature>/routes/
-□ 11. Register router     →  app/apis/v1.py
-□ 12. Write tests         →  app/<feature>/tests/
-```
-
-See [docs/PROJECT_CONVENTIONS.md](docs/PROJECT_CONVENTIONS.md) for the full in-depth guide.
+`CLAUDE.md` is loaded every session; `.claude/rules/*.md` load only when a matching file is
+opened, so deep rules cost nothing until they are relevant. Three skills are available:
+`/new-module`, `/new-migration`, `/review-module`.
 
 ---
 

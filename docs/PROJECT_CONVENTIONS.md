@@ -1,7 +1,13 @@
 # Project Conventions
 
-> Authoritative guide for building and scaling modules in this FastAPI + Next.js stack.
-> Applies to AI coding assistants and human developers equally — these are hard constraints.
+> **How** backend code is built in this stack. Hard constraints, for humans and agents equally.
+> Where code *goes* is [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md); the frontend is
+> [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md); the always-loaded summary is
+> [`../CLAUDE.md`](../CLAUDE.md).
+>
+> `CLAUDE.md` and `.claude/rules/` link here **by section number** — add sections at the end rather
+> than renumbering.
+> Last verified against the code: 9 September 2026.
 
 ---
 
@@ -12,7 +18,8 @@
 | Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready starter — clone this, never rebuild from scratch |
 | Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical modular monolith + DDD guide |
 | Official FastAPI Skill | https://github.com/fastapi/fastapi/blob/master/fastapi/.agents/skills/fastapi/SKILL.md | Upstream FastAPI conventions these rules are checked against — see §21 |
-| Modernization Tracker | `docs/MODERNIZATION.md` | What has been aligned with the skill, and what is still pending |
+| Modernization Tracker | [`planning/modernization.md`](planning/modernization.md) | What has been aligned with the skill, and what is still pending |
+| Documentation Map | [`README.md`](README.md) | Which document owns what, and when to read it |
 
 ---
 
@@ -47,14 +54,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 > produces the wrong query.
 
 ### Frontend
-| Concern | Technology |
-|---------|-----------|
-| Framework | Next.js (App Router) |
-| Server State | React Query (TanStack Query) |
-| Client State | Zustand (UI-only state) |
-| Styling | Tailwind CSS |
-| Forms | React Hook Form + Zod |
-| Testing | Vitest + Playwright |
+See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §1.
 
 ---
 
@@ -98,18 +98,26 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 │   ├── activity/                    # Append-only audit log (included in template)
 │   ├── release_notes/               # What's New system (included in template)
 │   │
-│   └── <feature>/                   # Project-specific domain modules
+│   └── <feature>/                   # Project-specific domain modules — LAYERS ARE FOLDERS (§4)
 │       ├── __init__.py              # Public API exports only
-│       ├── dependencies.py          # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module)
-│       ├── models.py                # SQLAlchemy ORM (or models/ subpackage)
-│       ├── schemas.py               # Pydantic models (or schemas/ subpackage)
-│       ├── crud.py                  # Repository (or crud/ subpackage)
-│       ├── services.py              # Business logic (or services/ subpackage)
-│       ├── routes.py                # HTTP endpoints (or routes/ subpackage)
-│       ├── exceptions.py            # Domain-specific errors
-│       ├── enums.py                 # Domain enums
-│       ├── permissions.py           # Permission constants
-│       └── tasks.py                 # Celery tasks
+│       ├── dependencies.py          # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module). Flat
+│       ├── models/                  # SQLAlchemy ORM — one sibling per entity
+│       ├── schemas/                 # Pydantic models — one sibling per entity
+│       ├── crud/                    # Repository — one sibling per entity
+│       ├── services/                # Business logic — one sibling per cohesive job
+│       ├── routes/                  # HTTP endpoints — one sibling + router per concern
+│       ├── exceptions.py            # Domain-specific errors — stays flat
+│       ├── enums.py                 # Domain enums — stays flat
+│       ├── list_params.py           # XListParams(ListParams) — stays flat (§10)
+│       ├── permissions.py           # Permission constants — stays flat
+│       ├── tasks.py                 # Celery tasks — stays flat
+│       ├── <feature>_doc/           # Every .md the module owns
+│       └── tests/                   # Every test the module owns — a package
+│
+│   # The shape above is the DEFAULT for a domain module. A module that is genuinely
+│   # one small thing keeps flat .py files (app/activity, app/release_notes), and a
+│   # module with sub-domains nests them (app/iam = auth/ + user/ + permission/).
+│   # Which shape, and why: MODULE_CONVENTIONS.md §6.
 │
 ├── migrations/
 │   ├── env.py
@@ -131,36 +139,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 ```
 
 ### Frontend
-```
-src/
-├── app/                             # Next.js App Router
-│   ├── (auth)/                      # Unauthenticated pages
-│   ├── (dashboard)/
-│   │   └── <role>/                  # One folder per user role
-│   │       ├── config.ts            # Nav items, route constants — NO JSX, no hooks
-│   │       ├── layout.tsx
-│   │       └── <feature>/page.tsx
-│   ├── api/                         # Route handlers (BFF layer)
-│   └── globals.css                  # Design tokens — single source of truth
-│
-├── components/
-│   ├── layout/                      # Shell (sidebar, topnav)
-│   ├── providers/                   # Context wrappers — no visual output
-│   ├── shared/                      # Reusable feature components
-│   └── ui/                          # Primitives (Button, Badge, Input)
-│
-├── lib/                             # Business logic — DOMAIN-BASED
-│   ├── api-client.ts                # Singleton HTTP client — stateless, no stored tokens
-│   └── <domain>/
-│       ├── types.ts                 # Backend* (snake_case) + Frontend (camelCase) types
-│       ├── transformers.ts          # snake_case ↔ camelCase — the ONLY place backend fields appear
-│       ├── api.ts                   # Service functions → apiClient → transform → return
-│       ├── hooks.ts                 # React Query hooks
-│       ├── store.ts                 # Zustand — ONLY shared UI state (optional)
-│       └── index.ts                 # Barrel exports
-│
-└── middleware.ts                    # Route protection + API auth injection
-```
+See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §2.
 
 ---
 
@@ -184,16 +163,14 @@ src/
 | Permissions | `resource:action[:scope]` | `leads:create`, `leads:view:all` |
 
 ### Frontend
-| Type | Convention | Example |
-|------|-----------|---------|
-| Files | `kebab-case.tsx` or `camelCase.ts` | `lead-table.tsx`, `hooks.ts` |
-| Components | `PascalCase` | `LeadTable`, `UserAvatar` |
-| Hooks | `use` prefix | `useLeads()`, `useCreateLead()` |
-| Backend types | `Backend*` prefix | `BackendLead`, `BackendUser` |
+See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §3.
 
 ---
 
 ## 4. Layered Architecture
+
+> Enforced version: [`.claude/rules/layering.md`](../.claude/rules/layering.md),
+> loaded automatically when you edit a service or CRUD file. Checked by `app/core/tests/test_layering.py`.
 
 ```
 Route → Service → CRUD → Model
@@ -206,6 +183,56 @@ Route → Service → CRUD → Model
 | **CRUD** | SQL operations | Never `session.commit()`. Only `add()`, `flush()`, `refresh()`. Extend `CRUDBase`. |
 | **Schemas** | Request/response shapes | Split by intent: `Create`, `Update`, `Response`. |
 | **Models** | Database tables | Pure data containers. No business logic. |
+
+### Layer packages — the default for a domain module
+
+**A domain module lays each layer out as a folder from its first commit** — `models/`, `schemas/`,
+`crud/`, `services/`, `routes/`. Not once a file gets long: from the start. Which modules do and do
+not, and why: [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md) §6.
+
+```
+app/<feature>/
+├── crud/
+│   ├── __init__.py        # re-exports every CRUD class AND its singleton
+│   ├── <entity>.py        # <Entity>CRUD, <entity>_crud
+│   └── <entity2>.py
+├── services/
+│   ├── __init__.py        # re-exports the service classes
+│   ├── <feature>_service.py       # one sibling per cohesive job
+│   └── <concept>.py               # a helper two of them share, named for the concept
+└── routes/
+    ├── __init__.py        # re-exports each router, prefixes and tags intact. NO aggregator
+    ├── <entity>.py
+    └── <entity2>.py
+```
+
+- **One sibling per entity** for `models`, `schemas`, `crud` and `routes`; **one sibling per cohesive
+  job** for `services`. Never split by line count.
+- **A folder holding one file is fine and is not a smell.** `services/` with a single
+  `<feature>_service.py` is the correct starting shape — the second service has somewhere to go, and
+  adding it is a new file rather than a restructure.
+- **The public import surface is the package, never a submodule.**
+  `from app.<feature>.crud import <entity>_crud` is the only form callers use.
+- **`crud/__init__.py` re-exports every CRUD class *and* its singleton** — the singleton is what
+  `dependencies.py` wires in, and a second instance gives the DI copy and the copy imported by tests
+  different objects.
+- **`models/__init__.py` must re-export every model.** `app/core/alembic_models_import.py` imports
+  the *package*; a model left out is a table autogenerate stops seeing (§8).
+- **`routes/__init__.py` re-exports each router and builds no aggregator.** `app/apis/v1.py`
+  registers them one by one (§11). Splitting `routes.py` moves the literal-before-wildcard hazard out
+  of one file's declaration order and into `v1.py`, where
+  [`app/apis/tests/test_route_registration.py`](../app/apis/tests/test_route_registration.py) keeps
+  it caught.
+- **Services are still built once** by the factory in `dependencies.py`. Layout does not change DI.
+- **A model relationship naming a class in another sibling is a string**, and a string is invisible
+  to static analysis. Import the target under `if TYPE_CHECKING:` so a reader and `ruff` can resolve
+  it; SQLAlchemy resolves it through its own registry at runtime, so the circular import never
+  happens.
+- **Each `__init__.py` docstring says what the package holds and why it is split**, and imports
+  nothing heavy.
+
+**These stay flat, always:** `dependencies.py`, `exceptions.py`, `enums.py`, `list_params.py`,
+`tasks.py`, `permissions.py`.
 
 ### Transaction ownership
 
@@ -279,6 +306,8 @@ When you must mix blocking and async code, use **Asyncer** (`asyncify` / `syncif
 ---
 
 ## 5. Dependency Injection (`dependencies.py`)
+
+> Enforced version: [`.claude/rules/routes-and-di.md`](../.claude/rules/routes-and-di.md).
 
 Every module **must** have a `dependencies.py`. It is the single wiring layer — the only file that knows about cross-module imports.
 
@@ -502,6 +531,9 @@ class MyModel(Base):
 
 ## 8. Database & Alembic
 
+> Enforced version: [`.claude/rules/models-and-migrations.md`](../.claude/rules/models-and-migrations.md).
+> Checked by `app/core/tests/test_alembic_models_registered.py`.
+
 ### Alembic model registration
 
 `app/core/alembic_models_import.py` is the single source of truth for autogenerate:
@@ -528,6 +560,8 @@ file_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(re
 ---
 
 ## 9. Authentication & RBAC
+
+> Enforced version: [`.claude/rules/permissions.md`](../.claude/rules/permissions.md).
 
 ### Permission naming
 
@@ -580,6 +614,8 @@ async def create_lead(
 
 ## 10. List Endpoints (Filtering, Sorting, Pagination)
 
+> Enforced version: [`.claude/rules/routes-and-di.md`](../.claude/rules/routes-and-di.md).
+
 > **Reference implementation: `app/activity/`.** Read those four files together —
 > `schemas.py` (`ActivityListParams`), `crud.py` (`get_list_filtered`), `service.py`
 > (`list_logs`), `routes.py` (`list_activity_logs`) — for a complete worked example.
@@ -606,10 +642,16 @@ Route (params: Annotated[XxxListParams, Query()])
 
 | File | What to add |
 |------|-------------|
-| `schemas.py` | `XxxListParams(ListParams)` — narrow `sort_by` to a `Literal[...]` + add filters |
-| `crud.py` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
-| `services.py` | `list_xxx(session, params, …)` — pass-through |
-| `routes.py` | `params: Annotated[XxxListParams, Query()]` |
+| `list_params.py` | `XxxListParams(ListParams)` — narrow `sort_by` to a `Literal[...]` + add filters |
+| `crud` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
+| `services` | `list_xxx(session, params, …)` — pass-through |
+| `routes` | `params: Annotated[XxxListParams, Query()]` |
+
+> **`list_params.py` is a flat sibling, not part of `schemas/`.** List parameters are a route
+> concern, not an entity, so keeping them out lets `schemas/` stay strictly one sibling per entity
+> when the module is layered (§4). In a flat module it is still its own file, so the two shapes read
+> the same. `app/activity` predates this and still declares `ActivityListParams` in `schemas.py`;
+> new modules use `list_params.py`.
 
 ```python
 class LeadListParams(ListParams):
@@ -654,6 +696,8 @@ scoped = params.model_copy(update={"owner_id": current_user.id})
 
 ## 11. API Router Registration
 
+> Checked by `app/apis/tests/test_route_registration.py`.
+
 Declare `prefix`, `tags`, and shared `dependencies` on the router itself — not on `include_router()`. This keeps the module self-contained and the aggregation file clean.
 
 ```python
@@ -682,6 +726,8 @@ app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)  # /api/v1
 ---
 
 ## 12. Background Tasks (Celery)
+
+> Enforced version: [`.claude/rules/background-tasks.md`](../.claude/rules/background-tasks.md).
 
 - Module tasks: `app/<module>/tasks.py`
 - Infrastructure (config, base task): `app/core/background/`
@@ -784,63 +830,9 @@ returns a response object, so `-> PNGStreamingResponse` is false and `ty` will f
 
 ## 16. Frontend Patterns
 
-### Data flow
-
-```
-Component → Hook (hooks.ts) → Service (api.ts) → apiClient → Backend
-```
-
-- All requests through `apiClient`. No direct `fetch()` in components.
-- `apiClient` is stateless — never stores tokens. Auth handled by `middleware.ts`.
-- All snake_case → camelCase conversion happens once, in `transformers.ts`.
-- Components never see backend shapes.
-
-### State management
-
-```
-Data from API + interactive?  → React Query
-Data from API, initial load?  → Server Component (RSC)
-Shared UI-only state?         → Zustand
-Local component state?        → useState
-```
-
-Never put API data (`isLoading`, `error`, `items[]`) in Zustand.
-
-### React Query pattern
-
-```typescript
-export const leadKeys = {
-  lists: () => ["leads", "list"] as const,
-  list: (params) => [...leadKeys.lists(), params] as const,
-};
-
-export function useLeads(params) {
-  return useQuery({ queryKey: leadKeys.list(params), queryFn: () => leadApi.list(params), staleTime: 30_000 });
-}
-
-export function useCreateLead() {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: leadApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: leadKeys.lists() }) });
-}
-```
-
-### Error handling
-
-All API errors are `AppError` instances (statusCode, message, detail, data). Map 422 responses to field errors. Use `onError` in mutations, not try/catch in components.
-
-### Styling rules
-
-- All tokens in `globals.css`. Use semantic tokens: `text-primary`, `bg-muted`.
-- Never hex colors or `bg-[#f5f5f5]` in component files.
-
-### File size limits
-
-| Type | Max |
-|------|-----|
-| Page component | ~200 lines |
-| Shared component | ~150 lines |
-| Custom hook | ~80 lines |
-| Zustand store | ~50 lines (if more, you're storing server state) |
+Moved to [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §4.
+The section number is kept so §17–§21 do not shift — `CLAUDE.md` and `.claude/rules/`
+link here by number.
 
 ---
 
@@ -877,22 +869,12 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 □ Define routes (inject service via Depends(get_<name>_service))
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
-□ Write tests
+□ Write app/<feature>/<feature>_doc/how-it-works.md
+□ Write tests in app/<feature>/tests/
 ```
 
 ### Frontend
-
-```
-□ Create lib/<domain>/ folder
-□ types.ts — Backend* (snake_case) + Frontend (camelCase) types
-□ transformers.ts — manual mapping only, no auto-mappers
-□ api.ts — service functions → apiClient → transform → return
-□ hooks.ts — query key factory + useQuery/useMutation
-□ store.ts — ONLY if shared UI state needed (never API data)
-□ index.ts — barrel exports
-□ Page at app/(dashboard)/<role>/<feature>/page.tsx
-□ Add nav item + route constant to role's config.ts
-```
+See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §5.
 
 ---
 
@@ -928,15 +910,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 - Use `python-jose` or `passlib` — both are unmaintained; use PyJWT and pwdlib (§1)
 
 ### Frontend — never do
-- API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
-- Direct `fetch()` in components
-- Hex colors in component files — use design tokens
-- Backend `snake_case` fields leaking into components
-- Tokens stored in `apiClient`
-- Deep relative imports (`../../..`) — use `@/` aliases
-- `any` without an explaining comment
-- JSX or hooks in `config.ts`
-- Mixing Server Actions + React Query mutations for the same operation
+See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §6.
 
 ### Both — never do
 - Files exceeding 200 lines without extracting sub-modules

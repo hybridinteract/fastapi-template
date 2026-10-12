@@ -457,12 +457,23 @@ recorded in [Tier 3](#tier-3--completed-2026-08-27).
 
 - [ ] **Apply the cosmetic ruff findings** as one isolated commit — `uv run ruff check app --fix`
       handles most of them (`Optional[X]`→`X | None`, `List[]`→`list[]`, import sort); the rest
-      need review. Do it alone so the diff stays reviewable.
+      need review. Do it alone so the diff stays reviewable. **Baseline as of 9 Sep 2026: 438
+      findings, and 68 files that `ruff format` would rewrite.** Treat `UP042`
+      (replace-str-enum) with care — it can change runtime behaviour in a SQLAlchemy codebase.
 - [ ] **Triage the `ty` baseline** (see below) before it can gate anything.
-- [ ] **Wire `ruff` + `ty` into CI** — only after the two above, or CI starts red on day one.
-- [ ] **Zero test files** despite pytest being configured (`testpaths = ["app"]`) and §18's
-      checklist ending in "Write tests". Note that Starlette 1.x deprecates `httpx` with
-      `TestClient` in favour of `httpx2` — decide that when the suite is written.
+- [x] **CI exists** — `.github/workflows/ci.yml`, added 9 Sep 2026. It **gates** on `pytest`
+      and `scripts/check_docs.py`; `ruff` and `ty` run with `continue-on-error` and are
+      reported only, because the two baselines above would make it red on day one. New code is
+      kept clean by `.pre-commit-config.yaml`, which runs on changed files. **Delete the
+      `continue-on-error` lines once the two boxes above are ticked** — that is the last step
+      of this item, not a separate one.
+- [x] **Tests exist** — added 9 Sep 2026. `app/conftest.py` plus four convention tests
+      (`app/core/tests/`, `app/apis/tests/`) covering Alembic model registration, the layering
+      contract, module anatomy and router registration order. 12 tests, ~1s, no database.
+      These are the **floor, not the target**: there are still no behaviour tests.
+      A single `integration` marker splits the suite; see `.claude/rules/tests.md`.
+      `TestClient` still emits the Starlette deprecation warning about `httpx` vs `httpx2` —
+      it is harmless today and becomes a decision when the first route test is written.
 
 ### Deliberately deferred
 
