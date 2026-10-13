@@ -6,10 +6,10 @@ Extend with project-specific actions in your feature module's
 own enums.py if needed.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ActivityAction(str, Enum):
+class ActivityAction(StrEnum):
     """Standard actions tracked across the system."""
 
     # ── Core CRUD ──

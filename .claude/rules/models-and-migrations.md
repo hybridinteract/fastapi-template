@@ -9,7 +9,7 @@ paths:
 
 > The long version: [`docs/PROJECT_CONVENTIONS.md`](../../docs/PROJECT_CONVENTIONS.md) §4, §6, §8 ·
 > layer packages: [`docs/MODULE_CONVENTIONS.md`](../../docs/MODULE_CONVENTIONS.md) §6.
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 12 October 2026.
 
 ## The rules
 
@@ -27,7 +27,10 @@ paths:
 4. **`op.add_column` does not emit `CREATE TYPE`.** A new `SQLEnum` column needs an explicit
    `postgresql.ENUM(..., name="…").create(op.get_bind(), checkfirst=True)` in `upgrade()` and a
    matching `.drop(..., checkfirst=True)` in `downgrade()`. Without it the migration dies with
-   `type "x" does not exist` — on the deploy, not on your machine.
+   `type "x" does not exist` — on the deploy, not on your machine. **The reverse trap:**
+   `op.create_table` with an inline `sa.Enum` *does* emit `CREATE TYPE`, but `op.drop_table(name)`
+   never drops it — so `downgrade()` needs that same explicit `.drop(...)`, or the next `upgrade`
+   dies with `type "x" already exists`.
 5. **Apply `upgrade` *and* `downgrade` before committing.** A migration you cannot reverse is one you
    cannot deploy twice.
 6. **Autogenerate against a database already at head**, or it will try to recreate every table.
@@ -73,7 +76,8 @@ paths:
 
 ## Known gaps
 
-- Nothing checks that a migration's `downgrade()` was ever run. Rule 5 is on you.
+- **Only CI checks rule 5.** The integration job runs `upgrade head` → `downgrade base` →
+  `upgrade head` → `alembic check` against a fresh Postgres; nothing runs it before you push.
 - `app/core/tests/test_alembic_models_registered.py` finds models by AST (`class X(Base)`), so a model
   declared through an unusual metaclass or a factory would not be seen. No such model exists today.
 - **Nothing checks rule 2.** The test compares declared classes against `alembic_models_import.py`,
@@ -91,4 +95,5 @@ grep -rhn "^class .*(Base)" app --include="models.py" --include="models/*.py" | 
 
 docker compose exec api alembic upgrade head && docker compose exec api alembic downgrade -1
 docker compose exec api alembic upgrade head
+docker compose exec api alembic check     # "No new upgrade operations detected."
 ```

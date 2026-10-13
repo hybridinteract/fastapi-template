@@ -1,7 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
-class UserStatus(str, Enum):
+
+class UserStatus(StrEnum):
     """Enum for user account status."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"

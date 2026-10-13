@@ -5,6 +5,60 @@ Follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.0] — 2026-10-12
+
+Dependency refresh with security fixes, plus three pre-existing defects found while verifying it.
+**Has a migration** (`43b28eb98417`). Detail and evidence: `docs/planning/modernization.md`,
+"Dependency Refresh 2".
+
+### Security
+- **PyJWT 2.13.0 → 2.15.1** — 2.13.0 carried 14 advisories (1 critical, 5 high, 8 moderate). One reached this
+  code: GHSA-8wjv-2p76-3863, a nested token header that made `jwt.decode()` raise `RecursionError`
+  straight past `decode_token()` — a 500 any caller could trigger. Now a `DecodeError` → 401.
+  The floor is commented as a security floor.
+- **tornado 6.5.10, urllib3 2.8.0, mako 1.4.3** (via flower, boto3, alembic) — 7 more advisories.
+  They are transitive, so their floors are `[tool.uv] constraint-dependencies` in `pyproject.toml`.
+- OSV now reports **0 advisories across all 106 locked packages** (was 21 across 4).
+
+### Fixed
+- 🐞 **Missing migration for `oauth_accounts` and `phone_otps`, and for `users.email` /
+  `users.hashed_password` becoming nullable.** The models arrived on 8 June 2026 (`aafdcc0`) without one, so every
+  database built from migrations lacked both tables and **`GET /users/me` failed** (it lists linked
+  OAuth accounts). New migration `43b28eb98417`; its `downgrade()` refuses, with the reason, while
+  any OAuth- or phone-only user exists, instead of failing on a bare constraint error.
+- 🐞 **`downgrade()` left the `userstatus` and `changetype` enum types behind**, so upgrade →
+  downgrade → upgrade died with `type "userstatus" already exists` — the sequence CI's integration
+  job runs. Both downgrades now drop their type.
+- 🐞 **`GET /activity?action=…` never matched a row.** On Python 3.11+, `str()` of a `(str, Enum)`
+  member is `"ActivityAction.CREATE"`, which the filter upper-cased and compared. All three enums
+  (`ActivityAction`, `UserStatus`, `ChangeType`) are now `StrEnum`; stored values, Pydantic and
+  OpenAPI are unchanged. First behaviour test: `app/activity/tests/test_list_filters.py`.
+
+### Changed
+- **FastAPI 0.141.1 → 0.143.0**, Starlette 1.6.0 → 1.7.0, Pydantic 2.13.4 → 2.14.1, uvicorn 0.54.0,
+  asyncpg 0.32.0, Alembic 1.20.0, SQLAlchemy 2.0.52 → **2.0.54** (fixes an asyncio connection leak),
+  and patch releases across the tree — 42 versions moved in all.
+- **New transitive dependency: `opentelemetry-api`**, required by FastAPI since 0.142.0. Inert here:
+  exporters start only with `FASTAPI_OTEL_AUTO_CONFIGURE=true`.
+- **SQLAlchemy is capped `<2.1`** — a maturity call, not a code one; see `docs/DECISIONS.md`.
+- `HTTP_422_UNPROCESSABLE_ENTITY` → `HTTP_422_UNPROCESSABLE_CONTENT` (RFC 9110; the old name warns).
+- `PermissionChecker` takes `CurrentUserDep` / `SessionDep` instead of bare `Depends()` — same
+  sub-dependencies, now in the house style. New **`CacheDep`** alias in `app.core.cache`; its
+  docstrings, README and examples use it.
+- `ReleaseNote.author` is typed `Mapped["User | None"]`; the mapping is unchanged.
+- **CI:** `actions/checkout` v4 → v7.0.1 and `astral-sh/setup-uv` v5 → v10.3.0, pinned by commit SHA
+  (setup-uv no longer publishes `@v10`); `uv sync --locked`; the integration job runs
+  `alembic check`, so a model with no migration now fails CI.
+- **Tooling:** ruff 0.17.0 and ty 0.0.86, with the pre-commit `rev:`s moved to match
+  (pre-commit-hooks v6.0.0). The `ruff-format` hook stays scoped to code: v0.17.0 added Markdown to
+  its types, which would reformat doc snippets on every doc edit. CI now runs on Python 3.13, the
+  Docker image's, via setup-uv's `python-version` (`.python-version` is gitignored by design).
+
+### Upgrade
+Run `alembic upgrade head` for `43b28eb98417`. If you created `oauth_accounts` or `phone_otps` by
+hand, check the migration against your schema first. Any code doing `str(member)` on these enums
+now gets the value, not `Cls.MEMBER`.
+
 ## [2.2.0] — 2026-09-10
 
 Documentation and skills only — **no `app/` behaviour changed**, and `app/iam` was not touched.

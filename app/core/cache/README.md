@@ -38,20 +38,20 @@ exists = await cache.exists("user:123")
 ### FastAPI Dependency Injection
 
 ```python
-from fastapi import Depends
-from app.core.cache import get_cache, Cache
+from app.core.cache import CacheDep
+
 
 @app.get("/users/{user_id}")
-async def get_user(user_id: int, cache: Cache = Depends(get_cache)):
+async def get_user(user_id: int, cache: CacheDep):
     # Try cache first
     user = await cache.get(f"user:{user_id}")
-    
+
     if not user:
         # Fetch from database
         user = await fetch_user_from_db(user_id)
         # Cache for 1 hour
         await cache.set(f"user:{user_id}", user, ttl=3600)
-    
+
     return user
 ```
 
@@ -60,10 +60,12 @@ async def get_user(user_id: int, cache: Cache = Depends(get_cache)):
 ```python
 from app.core.cache import cached
 
+
 @cached(ttl=1800)  # Cache for 30 minutes
 async def get_user_stats(user_id: int):
     # This expensive operation will be cached
     return await calculate_user_statistics(user_id)
+
 
 @cached(ttl=3600, key_prefix="products")
 async def get_product(product_id: int):
@@ -86,7 +88,7 @@ The cache uses your existing Redis settings from `settings.py`:
 
 ```python
 REDIS_HOST: str = "localhost"
-REDIS_PORT: int = 6379  
+REDIS_PORT: int = 6379
 REDIS_DB: int = 0
 REDIS_PASSWORD: str = ""  # Optional
 ```
@@ -119,18 +121,19 @@ async def get_user_safe(user_id: int):
 ```python
 from app.core.cache import cached
 
+
 class UserService:
     @cached(ttl=3600, key_prefix="users")
     async def get_user(self, user_id: int):
         return await self.db.get_user(user_id)
-    
+
     async def update_user(self, user_id: int, data: dict):
         # Update database
         user = await self.db.update_user(user_id, data)
-        
+
         # Clear cache
         await cache.delete(f"users:get_user:{user_id}")
-        
+
         return user
 ```
 
@@ -138,17 +141,14 @@ class UserService:
 
 ```python
 @app.get("/products")
-async def list_products(
-    category: str = None,
-    cache: Cache = Depends(get_cache)
-):
+async def list_products(cache: CacheDep, category: str | None = None):
     cache_key = f"products:list:{category or 'all'}"
-    
+
     products = await cache.get(cache_key)
     if not products:
         products = await fetch_products(category)
         await cache.set(cache_key, products, ttl=600)  # 10 minutes
-    
+
     return products
 ```
 
@@ -156,7 +156,7 @@ async def list_products(
 
 ```python
 @app.post("/login")
-async def login(credentials: LoginData, cache: Cache = Depends(get_cache)):
+async def login(credentials: LoginData, cache: CacheDep):
     user = await authenticate(credentials)
     
     session_id = generate_session_id()

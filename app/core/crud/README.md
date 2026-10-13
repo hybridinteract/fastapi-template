@@ -27,10 +27,12 @@ from app.core.crud import CRUDBase
 from app.mymodule.models import Thing
 from app.mymodule.schemas import ThingCreate, ThingUpdate
 
-class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
-    pass            # free CRUD for all 7 base operations
 
-thing_crud = ThingCRUD(Thing)   # module-level singleton
+class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
+    pass  # free CRUD for all 7 base operations
+
+
+thing_crud = ThingCRUD(Thing)  # module-level singleton
 ```
 
 ### Methods
@@ -73,15 +75,17 @@ Route (XxxListParams = Depends())
 Define a sort-field enum with exactly the column names the UI may sort by.
 
 ```python
-from enum import Enum
+from enum import StrEnum
 
-class ThingSortField(str, Enum):
+
+class ThingSortField(StrEnum):
     CREATED_AT = "created_at"
-    NAME       = "name"
-    STATUS     = "status"
+    NAME = "name"
+    STATUS = "status"
 
-class SortDirection(str, Enum):
-    ASC  = "asc"
+
+class SortDirection(StrEnum):
+    ASC = "asc"
     DESC = "desc"
 ```
 
@@ -98,17 +102,18 @@ from pydantic import Field
 from app.core.schemas import ListParams
 from app.mymodule.enums import ThingSortField, SortDirection
 
+
 class ThingListParams(ListParams):
     # Override sort fields with typed enums so Swagger shows dropdowns
     # and FastAPI returns 422 for invalid values (instead of silent fallback).
-    sort_by:    ThingSortField = ThingSortField.CREATED_AT
-    sort_order: SortDirection  = SortDirection.DESC
+    sort_by: ThingSortField = ThingSortField.CREATED_AT
+    sort_order: SortDirection = SortDirection.DESC
 
     # Module-specific filters
-    search:    Optional[str]  = None
-    status:    Optional[str]  = None
+    search: Optional[str] = None
+    status: Optional[str] = None
     date_from: Optional[date] = None
-    date_to:   Optional[date] = None
+    date_to: Optional[date] = None
 ```
 
 `ListParams` base fields (always inherited):
@@ -138,12 +143,12 @@ from app.mymodule.schemas import ThingCreate, ThingUpdate
 # Map sort_by string values → ORM columns (safe — no getattr on raw input)
 _SORT_COL_MAP = {
     "created_at": Thing.created_at,
-    "name":       Thing.name,
-    "status":     Thing.status,
+    "name": Thing.name,
+    "status": Thing.status,
 }
 
-class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
 
+class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
     async def get_list_filtered(
         self,
         session: AsyncSession,
@@ -156,7 +161,7 @@ class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
         status: Optional[str] = None,
         date_from=None,
         date_to=None,
-        owner_user_ids: Optional[List] = None,   # scope — None means no restriction
+        owner_user_ids: Optional[List] = None,  # scope — None means no restriction
     ) -> Tuple[List[Thing], int]:
         """Return a filtered, sorted page of Things plus the un-paginated total."""
 
@@ -164,6 +169,7 @@ class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
 
         if search:
             from app.core.utils.text import escape_like
+
             term = f"%{escape_like(search)}%"
             filters.append(Thing.name.ilike(term))
 
@@ -181,7 +187,7 @@ class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
         # Build ORDER BY — whitelist guards against arbitrary column names
         sort_col = _SORT_COL_MAP.get(sort_by, Thing.created_at)
         order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
-        order_clauses = [order, Thing.id.desc()]   # tiebreaker last
+        order_clauses = [order, Thing.id.desc()]  # tiebreaker last
 
         base_query = select(Thing).where(*filters)
 
@@ -192,6 +198,7 @@ class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
             limit=limit,
             order_clauses=order_clauses,
         )
+
 
 thing_crud = ThingCRUD(Thing)
 ```
@@ -207,8 +214,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mymodule.crud.thing_crud import thing_crud
 from app.mymodule.schemas import ThingListParams, ThingListResponse
 
-class ThingService:
 
+class ThingService:
     async def list_things(
         self,
         session: AsyncSession,
@@ -229,6 +236,7 @@ class ThingService:
         )
         return ThingListResponse(items=items, total=total, skip=params.skip, limit=params.limit)
 
+
 thing_service = ThingService()
 ```
 
@@ -246,6 +254,7 @@ from app.iam.dependencies import get_current_user
 from app.iam import User
 
 router = APIRouter(prefix="/things", tags=["Things"])
+
 
 @router.get("/", response_model=ThingListResponse)
 async def list_things(
@@ -319,8 +328,10 @@ base_query = (
 )
 
 items, total = await paginated_select(
-    session, base_query,
-    skip=skip, limit=limit,
+    session,
+    base_query,
+    skip=skip,
+    limit=limit,
     order_clauses=order_clauses,
     extra_columns=[call_stats.c.last_call_time, call_stats.c.call_count],
 )

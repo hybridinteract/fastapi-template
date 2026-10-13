@@ -1,14 +1,15 @@
 # Modernization Tracker
 
 > Status: **IN PROGRESS** — Tiers 1–3 done, hygiene items open.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 12 October 2026.
 
 Bringing the template in line with the **official FastAPI agent skill**
 (`fastapi/.agents/skills/fastapi/SKILL.md`) and current library practice.
 
 - **Reviewed against:** FastAPI skill + all 6 reference docs (`streaming`, `dependencies`,
   `responses`, `pydantic`, `path-operations`, `other-tools`), FastAPI release notes through
-  **0.141.1**, and the FastAPI security tutorial (`tutorial/security/oauth2-jwt.md`).
+  **0.143.0**, and the FastAPI security tutorial (`tutorial/security/oauth2-jwt.md`). The skill
+  was re-diffed against its 0.141.1 copy on 12 Oct 2026 — see [Refresh 2](#dependency-refresh-2--completed-2026-10-12).
 - **Scope rule:** only things this template *actually uses* whose correct usage has changed.
   Features we deliberately skip are listed under [Not Adopted](#not-adopted).
 
@@ -18,6 +19,7 @@ Bringing the template in line with the **official FastAPI agent skill**
 | 2 | `PROJECT_CONVENTIONS.md` contradicts itself or the code | ✅ **Done** (2026-08-27) |
 | 3 | Defect fixes + new capabilities | ✅ **Done** (2026-08-27) — see [Tier 3](#tier-3--completed-2026-08-27) |
 | — | Dependency refresh — every package to its latest release | ✅ **Done** (2026-08-27) |
+| — | Dependency refresh 2 — security floors, CI actions, three defects | ✅ **Done** (2026-10-12) — see [Refresh 2](#dependency-refresh-2--completed-2026-10-12) |
 
 ---
 
@@ -448,6 +450,38 @@ RUN uv sync --frozen --no-dev
 
 ---
 
+## Dependency Refresh 2 — Completed 2026-10-12
+
+Every package re-checked against PyPI, its own changelog, and OSV. 42 lockfile versions moved and one
+was added; the full list is in `RELEASE_NOTES.md` 2.3.0. What mattered:
+
+- **Security.** OSV listed 21 advisories across 4 locked packages; there are now **0 across all 106**.
+  PyJWT 2.13.0 carried 14. The one that reached our code, GHSA-8wjv-2p76-3863, was reproduced: a
+  nested token header made `jwt.decode()` raise `RecursionError` past `decode_token()`'s
+  `InvalidTokenError` handler — a 500 any caller could trigger. 2.15.1 raises `DecodeError` → 401.
+  tornado, urllib3 and mako are transitive, so their floors live in `[tool.uv]
+  constraint-dependencies` in `pyproject.toml`.
+- **The skill diff, 0.141.1 → 0.143.0**, adds two things: prefer native OpenTelemetry (deferred —
+  see [Worth deciding separately](#worth-deciding-separately)), and prefer Asyncer over
+  `run_in_threadpool()` (already the rule here; zero `run_in_threadpool` calls).
+- **Starlette 1.7** renamed `HTTP_422_UNPROCESSABLE_ENTITY` per RFC 9110; the old name warns at
+  runtime. Both uses in `app/core/exceptions.py` moved.
+- **CI actions** were four majors behind and are now SHA-pinned; `setup-uv` no longer publishes
+  floating major tags, so `@v10` does not exist. `uv sync --locked` fails on a stale lockfile.
+
+**Three defects found while verifying** — none caused by the upgrade, all pre-existing:
+
+1. **No migration for `oauth_accounts` / `phone_otps`**, so `GET /users/me` failed on every database
+   built from migrations. Migration `43b28eb98417`; CI now runs `alembic check`.
+2. **Enum types outlived `downgrade()`**, so upgrade → downgrade → upgrade died with
+   `type "userstatus" already exists` — the exact sequence CI runs.
+3. **`GET /activity?action=…` never matched** — `str()` of a `(str, Enum)` member is its qualified
+   name on Python 3.11+. Fixed by `StrEnum`; regression test in `app/activity/tests/`.
+
+Verified: test suite, app import + OpenAPI build with zero warnings, `/users/me` end to end on a
+migrated database, two full migration cycles plus `alembic check` on Postgres 16, and every
+pre-commit hook on every changed file.
+
 ## Pending
 
 Everything from the original Tier 3 list is done except the items below. Completed work is
@@ -457,9 +491,10 @@ recorded in [Tier 3](#tier-3--completed-2026-08-27).
 
 - [ ] **Apply the cosmetic ruff findings** as one isolated commit — `uv run ruff check app --fix`
       handles most of them (`Optional[X]`→`X | None`, `List[]`→`list[]`, import sort); the rest
-      need review. Do it alone so the diff stays reviewable. **Baseline as of 9 Sep 2026: 438
-      findings, and 68 files that `ruff format` would rewrite.** Treat `UP042`
-      (replace-str-enum) with care — it can change runtime behaviour in a SQLAlchemy codebase.
+      need review. Do it alone so the diff stays reviewable. **Baseline as of 12 Oct 2026: 383
+      findings (438 on 9 Sep), and 56 files that `ruff format` would rewrite (68).** `ruff format`
+      also rewrites Python code blocks inside `.md` files — two today. `UP042` (replace-str-enum)
+      is **done**: all three enums are `StrEnum` — [`DECISIONS.md`](../DECISIONS.md), 12 Oct 2026.
 - [ ] **Triage the `ty` baseline** (see below) before it can gate anything.
 - [x] **CI exists** — `.github/workflows/ci.yml`, added 9 Sep 2026. It **gates** on `pytest`
       and `scripts/check_docs.py`; `ruff` and `ty` run with `continue-on-error` and are
@@ -496,6 +531,15 @@ recorded in [Tier 3](#tier-3--completed-2026-08-27).
       alongside the new `google` one.
 - [ ] **`requires-python = ">=3.11"` but Docker runs `python:3.13-slim`.** Raise the floor to
       3.12+. Resolution is verified for both today, so this is a tidying decision, not a fix.
+      Since 12 Oct 2026 CI runs on 3.13, matching the image (setup-uv `python-version`;
+      `.python-version` stays gitignored, per developer). The floor itself is unchanged.
+- [ ] **FastAPI's native OpenTelemetry (0.142.0+).** The official skill now says to prefer it for
+      traces, metrics and logs; `/metrics` here comes from `prometheus-fastapi-instrumentator`.
+      Switching means choosing an OTLP collector over a Prometheus scrape — a monitoring-stack
+      decision, not an upgrade. Until then the required `opentelemetry-api` stays inert:
+      exporters start only with `FASTAPI_OTEL_AUTO_CONFIGURE=true` (0.143.0).
+- [ ] **SQLAlchemy 2.1.** Held on 2.0.x with a `<2.1` cap; the code is already 2.1-ready. When
+      to lift it: [`DECISIONS.md`](../DECISIONS.md), 12 Oct 2026.
 
 ### Not adopted
 

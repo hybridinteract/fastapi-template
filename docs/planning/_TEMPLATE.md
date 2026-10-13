@@ -21,7 +21,7 @@ What a user can do, as a list. One line each, no implementation.
 ## Workflow
 
 The path through the system, phase by phase, with any state machine written out. States are the
-`str, Enum` values as they will appear in the code.
+`StrEnum` values as they will appear in the code.
 
 ## Models with fields
 

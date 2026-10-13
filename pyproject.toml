@@ -1,13 +1,15 @@
 [project]
 name = "fastapi-backend-template"
-version = "2.2.0"
+version = "2.3.0"
 description = "Reusable FastAPI backend template with auth, RBAC, Celery, Redis, and object storage"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # Web framework
-    "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.4",
+    # 0.142.0 made `opentelemetry-api` a required dependency (FastAPI's native telemetry).
+    # It stays inert: exporters only start with FASTAPI_OTEL_AUTO_CONFIGURE=true (0.143.0).
+    "fastapi>=0.143.0",
+    "uvicorn[standard]>=0.54.0",
     "gunicorn>=26.2.0",
     "python-multipart>=0.0.32",
 
@@ -17,18 +19,23 @@ dependencies = [
     # NOT match Apple Silicon's `arm64`. Without the extra, every async DB call
     # fails locally on an M-series Mac with "the greenlet library is required",
     # while Docker (aarch64) silently works. The extra requires greenlet always.
-    "sqlalchemy[asyncio]>=2.0.52",
-    "asyncpg>=0.31.0",
-    "alembic>=1.19.1",
+    # Held on 2.0.x deliberately; the cap stops `uv lock --upgrade` crossing to 2.1
+    # unannounced. Why, and when to lift it: docs/DECISIONS.md, 12 October 2026.
+    "sqlalchemy[asyncio]>=2.0.54,<2.1",
+    "asyncpg>=0.32.0",
+    "alembic>=1.20.0",
 
     # Configuration
     "pydantic-settings>=2.15.0",
-    "python-dotenv>=1.2.3",
+    "python-dotenv>=1.2.4",
 
     # Authentication & security
     # PyJWT replaces the unmaintained python-jose (FastAPI docs standard).
     # [crypto] keeps RS256/ECDSA available, as python-jose[cryptography] did.
-    "pyjwt[crypto]>=2.13.0",
+    # Floor is a security floor: 2.13.0 carries 14 advisories, fixed across 2.14.0 and
+    # 2.15.0 — including GHSA-8wjv-2p76-3863, where a nested token header raises an
+    # uncaught RecursionError out of jwt.decode(). Do not lower it.
+    "pyjwt[crypto]>=2.15.1",
     # pwdlib replaces the unmaintained passlib. Argon2 hashes new passwords;
     # the bcrypt extra stays so existing passlib bcrypt hashes still verify.
     # This also removes the bcrypt<5 pin passlib forced on us.
@@ -38,7 +45,7 @@ dependencies = [
     # Background tasks
     "celery>=5.6.3",
     "redis>=8.1.0",
-    "flower>=2.1.0",
+    "flower>=2.2.0",
 
     # HTTP + async utilities (conventions §1, §4, §19)
     # HTTPX is the mandated outbound HTTP client (never Requests).
@@ -47,16 +54,16 @@ dependencies = [
     "asyncer>=0.0.18",
 
     # CLI utilities
-    "typer>=0.27.1",
+    "typer>=0.27.3",
     "rich>=15.0.0",
 
     # File handling / object storage
-    "boto3>=1.43.81",
+    "boto3>=1.43.111",
     "Pillow>=12.3.0",
     "python-magic>=0.4.27",
 
     # Data processing (optional — remove if not needed)
-    "pandas>=3.0.5",
+    "pandas>=3.0.6",
     "openpyxl>=3.1.5",
 
     # Monitoring
@@ -72,7 +79,7 @@ dependencies = [
 # transport the provider uses, and google-auth does not pull it in by itself.
 # This brings in `requests` as google-auth's internal transport — it does not
 # relax the conventions §19 rule that OUR outbound HTTP goes through HTTPX.
-google = ["google-auth[requests]>=2.57.0"]
+google = ["google-auth[requests]>=2.61.0"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -107,8 +114,21 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.16.4",
-    "ty>=0.0.75",
+    # Keep in step with `rev:` in .pre-commit-config.yaml, or the hook and CI disagree.
+    "ruff>=0.17.0",
+    "ty>=0.0.86",
+]
+
+[tool.uv]
+# Security floors for TRANSITIVE dependencies — packages we never import, so they have
+# no line above. A constraint does not add a dependency; it only forbids the resolver
+# from picking a vulnerable version if something else pulls the package in.
+# Raise a floor here when an advisory lands; delete one when its parent's own floor
+# passes it.
+constraint-dependencies = [
+    "tornado>=6.5.9",   # via flower — GHSA-c2m8-h5v5-343r, GHSA-chx6-46f5-w4vp (high)
+    "urllib3>=2.8.0",   # via boto3/botocore — GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw (high)
+    "mako>=1.4.2",      # via alembic — GHSA-5639-2j2p-m4mx (moderate, Windows paths)
 ]
 
 [tool.ruff]

@@ -516,6 +516,11 @@ class MyModel(Base):
 - Always UUID primary keys
 - Always `DateTime(timezone=True)` — store UTC, let frontend convert for display
 - Default: `utc_now` from `app.core.utils` — never `datetime.utcnow()` (deprecated)
+- **Enums subclass `StrEnum`, never `(str, Enum)`.** On Python 3.11+ `str()` and f-strings render a
+  `(str, Enum)` member as `"Cls.MEMBER"`, not its value — so any code that turns the member into a
+  string silently compares against the wrong thing. `StrEnum` renders the value; equality, Pydantic
+  and `SQLEnum(values_callable=...)` behave identically. The bug it prevented:
+  `app/activity/tests/test_list_filters.py`.
 
 ---
 

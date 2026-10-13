@@ -1,7 +1,7 @@
 # `app/activity` — the append-only audit trail
 
 > Who did what, to which record, when. Written from anywhere, read through one gated endpoint.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 12 October 2026.
 
 ## What it is for
 
@@ -75,9 +75,13 @@ class silently changes your endpoint's contract.
 - **`details` is unvalidated JSONB.** Never put a secret, a token, or a password in it.
 - **Extending the actions:** add members to `ActivityAction`. Anything you add must also be
   understood by whoever reads the log — an action nobody can interpret is noise.
+- **`ActivityAction` must stay a `StrEnum`.** The `action` filter reaches `crud.py` as an enum
+  member and is turned into a string there. As a `(str, Enum)` that string was
+  `"ACTIVITYACTION.CREATE"`, so `GET /activity?action=CREATE` silently returned nothing until
+  12 October 2026. `tests/test_list_filters.py` pins it; the rule is `PROJECT_CONVENTIONS.md` §6.
 
 ## The files
 
 `models.py` · `enums.py` (`ActivityAction`) · `logger.py` (the fire-and-forget façade) ·
 `tasks.py` (the Celery task that writes the row) · `crud.py` · `service.py` · `routes.py` ·
-`schemas.py` · `dependencies.py` · `exceptions.py`
+`schemas.py` · `dependencies.py` · `exceptions.py` · `tests/`

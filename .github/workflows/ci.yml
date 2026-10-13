@@ -19,17 +19,26 @@ env:
   SECRET_KEY: ci-secret-key-not-used-for-anything-real-0000
   JWT_SECRET_KEY: ci-jwt-secret-key-not-used-for-anything-real
 
+# Actions are pinned to a full commit SHA, with the release in a trailing comment. A tag can be
+# moved; a SHA cannot. setup-uv also stopped publishing floating major tags in v8, so
+# `@v10` does not exist — bump by SHA from the release page.
+#
+# `uv sync --locked` fails the job if uv.lock is stale against pyproject.toml, instead of
+# silently re-resolving to versions nobody reviewed. setup-uv caches by default (`auto`),
+# and v10 turns caching off for events where a poisoned cache could leak, such as
+# pull_request_target; do not force `enable-cache: true` back on.
+
 jobs:
   # ── The gate. These must stay green. ────────────────────────────────────────────
   test:
     name: tests + docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          enable-cache: true
-      - run: uv sync --all-extras --dev
+          python-version: "3.13"   # the Docker image's Python; .python-version is gitignored
+      - run: uv sync --locked --all-extras --dev
 
       - name: Convention tests + fast tier
         run: uv run pytest -q
@@ -50,11 +59,11 @@ jobs:
     name: lint + types (non-blocking)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          enable-cache: true
-      - run: uv sync --all-extras --dev
+          python-version: "3.13"   # the Docker image's Python; .python-version is gitignored
+      - run: uv sync --locked --all-extras --dev
 
       - name: ruff check
         continue-on-error: true
@@ -98,13 +107,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          enable-cache: true
-      - run: uv sync --all-extras --dev
+          python-version: "3.13"   # the Docker image's Python; .python-version is gitignored
+      - run: uv sync --locked --all-extras --dev
 
-      - name: Migrations apply, and reverse
+      # `alembic check` fails if the models describe anything the migrations do not create.
+      # Without it a model with no migration passes every gate — oauth_accounts and
+      # phone_otps shipped exactly that way, and /users/me failed on every fresh database.
+      - name: Migrations apply, reverse, and match the models
         env:
           POSTGRES_SERVER: localhost
           POSTGRES_HOST: localhost
@@ -112,6 +124,7 @@ jobs:
           uv run alembic upgrade head
           uv run alembic downgrade base
           uv run alembic upgrade head
+          uv run alembic check
 
       - name: Full suite
         env:

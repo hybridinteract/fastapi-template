@@ -8,16 +8,20 @@
 #   uv run pre-commit run --all-files
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.4
+    rev: v0.17.0
     hooks:
       # Keeps NEW code clean while the inherited baseline is worked down separately.
       # See the note in .github/workflows/ci.yml.
       - id: ruff-check
         args: [--fix]
+      # v0.17.0 added `markdown` to this hook's types, so editing any doc would also reformat
+      # its code samples — teaching snippets laid out on purpose — and bury the doc change in
+      # that churn. Scoped back to code; format a doc's samples deliberately if you want to.
       - id: ruff-format
+        types_or: [python, pyi, jupyter]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace

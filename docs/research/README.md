@@ -30,3 +30,4 @@ one loses the reasoning that made the replacement necessary.
 | Note | Status |
 |---|---|
 | [`ai-agent-integration.md`](ai-agent-integration.md) | STILL A PROPOSAL — direction for agentic AI features in the template |
+| [`test-data-isolation-sandboxes.md`](test-data-isolation-sandboxes.md) | STILL A PROPOSAL — sandbox deployment, one database per sandbox; not Postgres schemas in production |

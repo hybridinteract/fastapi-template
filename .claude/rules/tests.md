@@ -5,7 +5,7 @@ paths:
 ---
 # Tests
 
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 12 October 2026.
 
 ## The rules
 
@@ -65,8 +65,12 @@ sub-module rather than at the root. It also checks that a composite keeps **one*
 
 ## Known gaps
 
-- **The template ships convention tests and no behaviour tests.** A new project should add real tests
-  per module; these four are the floor, not the target.
+- **The template ships convention tests and one behaviour test** —
+  `app/activity/tests/test_list_filters.py`, a database-free regression test for the `action` filter.
+  A new project should add real tests per module; the convention tests are the floor, not the target.
+- **A model with no migration is caught only by CI's integration job** (`alembic check`, added after
+  the `oauth_accounts` and `phone_otps` tables shipped without one — migration `43b28eb98417`). The
+  fast tier cannot see it; run `alembic check` locally after any model change.
 - **Nothing enforces a composite module's rank.** `/new-module` generates
   `tests/test_module_boundary.py` for a new one, but `app/iam` predates the rule and has neither a
   rank nor the test — its `auth/` ↔ `user/` cycle is documented in `docs/MODULE_CONVENTIONS.md` §6.2

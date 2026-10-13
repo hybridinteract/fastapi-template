@@ -1,7 +1,7 @@
 # Decisions
 
 > Why things are the way they are. **Append-only, newest first.**
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 12 October 2026.
 
 A decision earns an entry here when reversing it would be expensive, or when someone six months from
 now would otherwise look at the code and assume it was an accident.
@@ -22,6 +22,33 @@ Shape:
 ```
 
 ---
+
+## 12 October 2026 — SQLAlchemy stays on 2.0.x; capped below 2.1
+
+**Decided:** `sqlalchemy[asyncio]>=2.0.54,<2.1`. The cap is what stops `uv lock --upgrade` crossing
+to 2.1 without anyone choosing to.
+**Why:** 2.1.0 went GA on 24 September 2026 and shipped four patch releases in thirteen days, each
+fixing regressions — 2.1.4 fixed one in the asyncpg dialect we run on. Our code is *not* the
+obstacle: it was audited against every item in the official `migration_21` guide (Python 3.11
+floor, greenlet extra, psycopg 3 default driver, unconditional autoflush, `filter_by()` ambiguity,
+named types bound to `MetaData`, `Computed`, dataclass and loader-option changes) and none applies,
+and our enum migrations render byte-identical DDL under 2.0.52 and 2.1.4. This is a maturity call.
+**Lift it when** a 2.1 release ships with no regression fixes in its changelog; then raise the floor,
+run the suite, the migration up/down/up cycle and `alembic check`, and record it here.
+**Rejected:** Moving now — the template would be where 2.1's regressions get found, in every
+project built from it. Leaving the floor uncapped — the next routine relock would take 2.1 silently.
+**Owner:** the comment on the `sqlalchemy` line in `pyproject.toml`.
+
+## 12 October 2026 — Enums subclass `StrEnum
+
+**Decided:** `UserStatus`, `ActivityAction` and `ChangeType` moved from `(str, Enum)` to `StrEnum`,
+and new enums use it.
+**Why:** On Python 3.11+, `str()` of a `(str, Enum)` member is `"ActivityAction.CREATE"`, not
+`"CREATE"`. `GET /activity?action=CREATE` upper-cased that and compared against
+`"ACTIVITYACTION.CREATE"`, so the filter matched nothing and returned an empty page with no error.
+**Rejected:** `.value` at the one call site — it fixes that site and leaves the trap armed for the
+next `str()` or f-string. Leaving the mixin for consistency — consistency with a latent bug.
+**Owner:** [`PROJECT_CONVENTIONS.md`](PROJECT_CONVENTIONS.md) §6.
 
 ## 10 September 2026 — Layer folders from the first commit; a module's shape is chosen, not grown
 

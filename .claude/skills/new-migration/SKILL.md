@@ -41,15 +41,21 @@ environment that has never seen the type, which is never your machine.
 ```python
 from sqlalchemy.dialects import postgresql
 
+
 def upgrade() -> None:
     status = postgresql.ENUM("draft", "published", name="release_status")
     status.create(op.get_bind(), checkfirst=True)
     op.add_column("release_notes", sa.Column("status", status, nullable=False))
 
+
 def downgrade() -> None:
     op.drop_column("release_notes", "status")
     postgresql.ENUM(name="release_status").drop(op.get_bind(), checkfirst=True)
 ```
+
+**`op.create_table` with an inline `sa.Enum` creates the type, but `op.drop_table(name)` never
+drops it.** Autogenerate's `downgrade()` leaves it behind and the next `upgrade` dies with
+`type "x" already exists` — add the same `postgresql.ENUM(name=...).drop(...)` after the table.
 
 Models must declare enums by **value**, or the column stores member names and stops
 matching your Python:
@@ -76,7 +82,11 @@ deploy twice.
 docker compose exec api alembic upgrade head
 docker compose exec api alembic downgrade -1
 docker compose exec api alembic upgrade head
+docker compose exec api alembic check   # must say "No new upgrade operations detected."
 ```
+
+`alembic check` is the step that proves the migration matches the models. CI runs it too, but
+only after you push.
 
 ## 6. Data migrations
 

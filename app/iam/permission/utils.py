@@ -4,17 +4,20 @@ Permission Management Utilities
 Comprehensive RBAC utilities and PermissionChecker.
 """
 
-from typing import List, Set, Optional, Union
 from uuid import UUID
-from fastapi import Depends, HTTPException, status
+
+from fastapi import HTTPException, status
+from sqlalchemy import exists as sql_exists
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, exists as sql_exists
-from app.core.database import get_session
+
+from app.core.database import SessionDep
 from app.core.logging import get_logger
-from app.iam.auth.current_user import get_current_user
+from app.iam.auth.current_user import CurrentUserDep
 from app.iam.config import auth_config
 from app.iam.permission.models import Permission, Role, RolePermission
-from app.iam.user.models import User as UserModel, UserRole
+from app.iam.user.models import User as UserModel
+from app.iam.user.models import UserRole
 
 logger = get_logger(__name__)
 
@@ -25,9 +28,7 @@ class BasePermissionChecker:
     """Base permission checker for super admin + basic RBAC authorization."""
 
     def __init__(
-        self,
-        required_permissions: Optional[Union[str, List[str]]] = None,
-        require_all: bool = True
+        self, required_permissions: str | list[str] | None = None, require_all: bool = True
     ):
         if required_permissions:
             if isinstance(required_permissions, str):
@@ -39,8 +40,8 @@ class BasePermissionChecker:
 
     async def __call__(
         self,
-        current_user: UserModel = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+        current_user: CurrentUserDep,
+        session: SessionDep,
     ) -> UserModel:
         if await self.is_super_admin(session, current_user.id):
             return current_user
@@ -49,30 +50,26 @@ class BasePermissionChecker:
             user_permissions = await self.get_user_permissions(session, current_user.id)
             has_access = False
             if self.require_all:
-                has_access = all(
-                    perm in user_permissions for perm in self.required_permissions)
+                has_access = all(perm in user_permissions for perm in self.required_permissions)
             else:
-                has_access = any(
-                    perm in user_permissions for perm in self.required_permissions)
+                has_access = any(perm in user_permissions for perm in self.required_permissions)
             if has_access:
                 return current_user
 
         self.handle_authorization_failure(current_user)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     def handle_authorization_failure(self, current_user: UserModel) -> None:
         logger.warning(
-            f"Permission denied for user {current_user.id}. Required: {self.required_permissions}")
+            f"Permission denied for user {current_user.id}. Required: {self.required_permissions}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Missing required permission(s): {', '.join(self.required_permissions)}"
+            detail=f"Missing required permission(s): {', '.join(self.required_permissions)}",
         )
 
     @staticmethod
-    async def is_super_admin(session: AsyncSession, user_id: Union[str, UUID]) -> bool:
+    async def is_super_admin(session: AsyncSession, user_id: str | UUID) -> bool:
         query = select(
             sql_exists()
             .where(UserRole.user_id == user_id)
@@ -84,7 +81,7 @@ class BasePermissionChecker:
         return result.scalar()
 
     @staticmethod
-    async def get_user_permissions(session: AsyncSession, user_id: Union[str, UUID]) -> Set[str]:
+    async def get_user_permissions(session: AsyncSession, user_id: str | UUID) -> set[str]:
         query = (
             select(Permission.name.distinct())
             .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -97,6 +94,7 @@ class BasePermissionChecker:
 
 class PermissionChecker(BasePermissionChecker):
     """Standard permission checker for pure RBAC authorization."""
+
     pass
 
 

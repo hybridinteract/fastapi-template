@@ -4,6 +4,7 @@ Exception handlers configuration for the FastAPI application.
 This module contains all exception handlers including validation errors,
 database errors, HTTP exceptions, and global error handling.
 """
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -27,8 +28,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         """Handle request validation errors with detailed messages."""
-        logger.warning(
-            f"Validation error on {request.url.path}: {exc.errors()}")
+        logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
 
         # Convert errors to JSON serializable format
         serializable_errors = []
@@ -44,22 +44,21 @@ def register_exception_handlers(app: FastAPI) -> None:
             serializable_errors.append(serializable_error)
 
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "Validation Error",
                 "detail": serializable_errors,
                 "body": str(exc.body) if exc.body else None,
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
     @app.exception_handler(ValidationError)
     async def pydantic_validation_exception_handler(request: Request, exc: ValidationError):
         """Handle Pydantic validation errors."""
-        logger.warning(
-            f"Pydantic validation error on {request.url.path}: {exc.errors()}")
-        
+        logger.warning(f"Pydantic validation error on {request.url.path}: {exc.errors()}")
+
         # Convert errors to JSON serializable format
         serializable_errors = []
         for error in exc.errors():
@@ -72,44 +71,42 @@ def register_exception_handlers(app: FastAPI) -> None:
                 else:
                     serializable_error[key] = str(value)
             serializable_errors.append(serializable_error)
-        
+
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "Data Validation Error",
                 "detail": serializable_errors,
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
     @app.exception_handler(IntegrityError)
     async def integrity_exception_handler(request: Request, exc: IntegrityError):
         """Handle database integrity constraint violations."""
-        logger.error(
-            f"Database integrity error on {request.url.path}: {str(exc)}")
+        logger.error(f"Database integrity error on {request.url.path}: {str(exc)}")
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={
                 "error": "Data Integrity Error",
                 "detail": "The operation violates a database constraint. This might be due to duplicate data or invalid references.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
     @app.exception_handler(OperationalError)
     async def operational_exception_handler(request: Request, exc: OperationalError):
         """Handle database operational errors (connection issues, etc.)."""
-        logger.error(
-            f"Database operational error on {request.url.path}: {str(exc)}")
+        logger.error(f"Database operational error on {request.url.path}: {str(exc)}")
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "error": "Service Unavailable",
                 "detail": "Database service is temporarily unavailable. Please try again later.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
@@ -123,7 +120,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Database Error",
                 "detail": "A database error occurred. Please try again later.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
@@ -137,7 +134,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Invalid Input",
                 "detail": str(exc),
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
@@ -151,7 +148,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Permission Denied",
                 "detail": "You don't have permission to perform this action.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
@@ -165,7 +162,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "File Not Found",
                 "detail": "The requested file or resource could not be found.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
@@ -179,24 +176,21 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Request Timeout",
                 "detail": "The request took too long to process. Please try again.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         """Global exception handler for unhandled exceptions."""
-        logger.error(
-            f"Unhandled exception on {request.url.path}: {str(exc)}",
-            exc_info=True
-        )
+        logger.error(f"Unhandled exception on {request.url.path}: {str(exc)}", exc_info=True)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "Internal Server Error",
                 "detail": "An unexpected error occurred. Please try again later.",
                 "timestamp": utc_now().isoformat(),
-                "path": str(request.url.path)
+                "path": str(request.url.path),
             },
         )
 

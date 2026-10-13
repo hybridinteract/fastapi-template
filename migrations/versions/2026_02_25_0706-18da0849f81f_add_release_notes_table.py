@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -52,4 +53,8 @@ def downgrade() -> None:
     op.drop_index('ix_release_notes_version', table_name='release_notes')
     op.drop_index('ix_release_notes_published', table_name='release_notes')
     op.drop_table('release_notes')
+    # op.create_table() emitted CREATE TYPE for the inline sa.Enum, but op.drop_table(name)
+    # has no columns to find it through, so the type would outlive the table and the next
+    # `upgrade` would fail with: type "changetype" already exists.
+    postgresql.ENUM(name="changetype").drop(op.get_bind(), checkfirst=True)
     # ### end Alembic commands ###
