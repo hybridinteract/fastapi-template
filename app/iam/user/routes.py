@@ -3,7 +3,7 @@
 Routes call services via Annotated Dep aliases (conventions §4 + §5).
 """
 
-from typing import Annotated, Optional
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -22,6 +22,7 @@ from app.iam.user.schemas import (
     AdminUserUpdate,
     AssignRoleRequest,
     UserListResponse,
+    UserOption,
     UserResponse,
     UserUpdateSelf,
     UserWithRolesResponse,
@@ -32,6 +33,7 @@ admin_router = APIRouter(prefix="/users", tags=["User Management"])
 
 
 # ── Self-service routes ───────────────────────────────────────────────────────
+
 
 @user_router.get("")
 async def get_my_profile(
@@ -60,12 +62,18 @@ async def get_users_by_role(
     session: SessionDep,
     current_user: CurrentUserDep,
     query_service: UserQueryServiceDep,
-) -> list[UserResponse]:
-    """Get all active users for a given role name (served from cache when warm)."""
-    return await query_service.get_active_users_by_role(session, role)
+) -> list[UserOption]:
+    """Active users holding ``role``, as picker options: id, name and avatar only.
+
+    Authenticated but ungated, as a picker is (`.claude/rules/permissions.md` rule 9), so it
+    returns nothing a signed-in stranger should not see. Served from cache when warm.
+    """
+    users = await query_service.get_active_users_by_role(session, role)
+    return [UserOption.model_validate(user) for user in users]
 
 
 # ── Admin collection routes ───────────────────────────────────────────────────
+
 
 @admin_router.get("", summary="List all users")
 async def list_users(
@@ -74,9 +82,9 @@ async def list_users(
     admin_service: AdminServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
-    role: Annotated[Optional[str], Query(description="Filter by role name")] = None,
-    status_filter: Annotated[Optional[UserStatus], Query(alias="status")] = None,
-    search: Annotated[Optional[str], Query(description="Search by name, email, or phone")] = None,
+    role: Annotated[str | None, Query(description="Filter by role name")] = None,
+    status_filter: Annotated[UserStatus | None, Query(alias="status")] = None,
+    search: Annotated[str | None, Query(description="Search by name, email, or phone")] = None,
 ) -> UserListResponse:
     return await admin_service.list_users(
         session,
@@ -100,6 +108,7 @@ async def create_user(
 
 # ── Admin meta routes (before /{user_id}) ─────────────────────────────────────
 
+
 @admin_router.get("/deleted", summary="List deleted users")
 async def list_deleted_users(
     session: SessionDep,
@@ -107,11 +116,9 @@ async def list_deleted_users(
     admin_service: AdminServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
-    search: Annotated[Optional[str], Query()] = None,
+    search: Annotated[str | None, Query()] = None,
 ) -> UserListResponse:
-    return await admin_service.list_deleted_users(
-        session, skip=skip, limit=limit, search=search
-    )
+    return await admin_service.list_deleted_users(session, skip=skip, limit=limit, search=search)
 
 
 # RBAC catalog endpoints (list roles/permissions, set role permissions) moved to
@@ -119,6 +126,7 @@ async def list_deleted_users(
 
 
 # ── Admin user detail routes ──────────────────────────────────────────────────
+
 
 @admin_router.get("/{user_id}", summary="Get user details")
 async def get_user(
@@ -179,6 +187,7 @@ async def hard_delete_user(
 
 # ── Role assignment ───────────────────────────────────────────────────────────
 
+
 @admin_router.post("/{user_id}/roles", summary="Assign roles to user")
 async def assign_roles(
     user_id: UUID,
@@ -187,9 +196,7 @@ async def assign_roles(
     current_user: SuperUserDep,
     admin_service: AdminServiceDep,
 ) -> UserWithRolesResponse:
-    return await admin_service.assign_roles(
-        session, user_id, body.role_ids, current_user
-    )
+    return await admin_service.assign_roles(session, user_id, body.role_ids, current_user)
 
 
 @admin_router.delete("/{user_id}/roles/{role_id}", summary="Remove role from user")

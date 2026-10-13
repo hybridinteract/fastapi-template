@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.iam.auth.activity import ActivityAction, log_activity
 from app.iam.config import auth_config
 from app.iam.exceptions import ProtectedRoleError, RoleNotFoundError
 from app.iam.permission.crud import PermissionCRUD, RoleCRUD
@@ -57,4 +58,12 @@ class PermissionService:
 
         role = await self.role_crud.get_with_permissions(session, role_id)
         logger.info(f"Admin {admin_user.email} updated permissions for role {role.name}")
+        await log_activity(
+            actor_id=admin_user.id,
+            action=ActivityAction.UPDATE,
+            resource_type="role",
+            resource_id=str(role_id),
+            actor_name=admin_user.full_name,
+            details={"role": role.name, "permission_ids": [str(p) for p in permission_ids]},
+        )
         return RoleWithPermissions.model_validate(role)

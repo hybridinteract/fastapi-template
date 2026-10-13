@@ -21,12 +21,14 @@ class ActivityAction(StrEnum):
     STATUS_CHANGE = "STATUS_CHANGE"
     PUBLISH = "PUBLISH"
     ARCHIVE = "ARCHIVE"
+    RESTORE = "RESTORE"
 
     # ── Assignment ──
     ASSIGN = "ASSIGN"
     UNASSIGN = "UNASSIGN"
 
     # ── Auth ──
+    REGISTER = "REGISTER"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
     PASSWORD_CHANGE = "PASSWORD_CHANGE"

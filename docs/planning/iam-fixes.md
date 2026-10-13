@@ -1,11 +1,16 @@
 # IAM fixes tracker
 
-> Status: **IN PROGRESS** — 0 of 17 done.
+> Status: **IN PROGRESS** — 5 of 17 done.
 > Last verified against the code: 13 October 2026.
 
 Functionality and security issues in `app/iam`, found by `/review-module iam` on 13 October 2026.
 Each was confirmed in the code, except items marked †, which come from the review only. Structure
 is out of scope: `app/iam` is not reviewed for shape or placement.
+
+**Found while fixing S4:** no `app/iam` action had ever reached the audit log — the adapter passed
+plain strings where `app.activity` expects its enum, and swallowed the error. Fixed with S4; pinned
+by `app/iam/tests/test_activity_adapter.py`. Decisions for S1 and S3: `../DECISIONS.md`,
+13 October 2026.
 
 **How to work through it:** one item per change. Set its status in the table below and add the
 commit beside it. An item whose status is **Decide** needs a product answer first: record the
@@ -15,14 +20,14 @@ answer in [`../DECISIONS.md`](../DECISIONS.md), then fix.
 
 | ID | Issue | Severity | Status |
 |---|---|---|---|
-| S1 | `GET /users/me/by-role/{role}` has no permission gate | High | Decide |
-| S2 | Restoring a deleted user always makes them active | Medium | Open |
-| S3 | Changing the password keeps other sessions signed in | Medium | Decide |
-| S4 | Privilege changes leave no audit record | Medium | Open |
+| S1 | `GET /users/me/by-role/{role}` has no permission gate | High | Done — picker returns `UserOption` |
+| S2 | Restoring a deleted user always makes them active | Medium | Done |
+| S3 | Changing the password keeps other sessions signed in | Medium | Done — revokes all, no new pair |
+| S4 | Privilege changes leave no audit record | Medium | Done — and the adapter fix below |
 | S5 | Three permissions gate nothing | Low–medium | Decide (after F4) |
 | S6 | The API can remove `developer_admin` | — | Decide |
 | S7 | `require_permission` and `SuperUserDep` disagree on `is_superuser` | Low | Decide |
-| F1 | An admin update allows a duplicate phone | Medium | Open |
+| F1 | An admin update allows a duplicate phone | Medium | Done |
 | F2 | Expired refresh tokens and OTPs are never deleted | Low–medium | Open |
 | F3 | Assigning roles returns the old roles | Low–medium | Open |
 | F4 | No sign-up path assigns a role | — | Decide |
@@ -130,8 +135,10 @@ answer in [`../DECISIONS.md`](../DECISIONS.md), then fix.
 - **Problem:** it reloads the user in the same session after the commit, and with
   `expire_on_commit=False` the loaded roles are kept (`.claude/rules/layering.md` → Known gaps).
   The database is right; the response is stale.
-- **Fix:** reload with `.execution_options(populate_existing=True)`.
-- **Done when:** the response lists the new role — with a test.
+- **Fix:** reload with `.execution_options(populate_existing=True)`. `set_role_permissions` in
+  `app/iam/permission/services.py` reloads the same way after `replace_role_permissions` inserts
+  link rows, so its response is likely stale too — check and fix it here.
+- **Done when:** both responses list the new state — with a test.
 
 ### F4 — No sign-up path assigns a role
 

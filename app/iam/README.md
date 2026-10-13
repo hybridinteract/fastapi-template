@@ -75,7 +75,9 @@ sub-path — email/password contributes `/auth/password/login`,
 
 Access tokens are JWTs (default 120 minutes). Refresh tokens are stored hashed
 (SHA-256), one row per session, so `logout-all` is a real server-side revocation
-rather than a client-side token drop. Passwords use Argon2 for new hashes with
+rather than a client-side token drop. Changing the password revokes every refresh token in the
+same transaction, so every device — this one included — signs in again when its access token
+expires. Passwords use Argon2 for new hashes with
 bcrypt retained for verifying old ones, and `verify_and_update_password` returns
 an upgraded hash when it meets an older scheme — so hashes migrate forward on login.
 

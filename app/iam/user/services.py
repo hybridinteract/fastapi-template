@@ -212,6 +212,10 @@ class AdminService:
         if "email" in update_data and update_data["email"] != user.email:
             if await self.user_crud.get_by_email(session, update_data["email"]):
                 raise UserAlreadyExistsError(update_data["email"])
+        new_phone = update_data.get("phone")
+        if new_phone and new_phone != user.phone:
+            if await self.user_crud.get_by_phone(session, new_phone):
+                raise PhoneAlreadyInUseError()
 
         user = await self.user_crud.update(session, db_obj=user, obj_in=update_data)
         await session.commit()
@@ -263,7 +267,7 @@ class AdminService:
         user.deleted_at = None
         user.deleted_by_user_id = None
         user.is_active = True
-        user.status = UserStatus.ACTIVE
+        # status is left as it was: a user suspended before deletion comes back suspended.
         await session.flush()
         await session.commit()
         await UserQueryService.invalidate_user(user_id)
@@ -292,6 +296,14 @@ class AdminService:
         await session.commit()
         await UserQueryService.invalidate_user(user_id)
         logger.warning(f"Admin {admin_user.email} permanently deleted user {user_id}")
+        await log_activity(
+            actor_id=admin_user.id,
+            action=ActivityAction.DELETE,
+            resource_type="user",
+            resource_id=str(user_id),
+            actor_name=admin_user.full_name,
+            details={"summary": f"Permanently deleted user {user_id}", "permanent": True},
+        )
 
     # ── Role assignment ───────────────────────────────────────────────────────
 
@@ -327,6 +339,15 @@ class AdminService:
         await UserQueryService.invalidate_user(user_id)
         user = await self.user_crud.get_user_with_roles(session, user.id)
         logger.info(f"Admin {admin_user.email} assigned roles to user {user_id}")
+        if to_add:
+            await log_activity(
+                actor_id=admin_user.id,
+                action=ActivityAction.ASSIGN,
+                resource_type="user",
+                resource_id=str(user_id),
+                actor_name=admin_user.full_name,
+                details={"roles": [role.name for role in to_add]},
+            )
         return UserWithRolesResponse.model_validate(user)
 
     async def remove_role(
@@ -341,6 +362,14 @@ class AdminService:
             await self.role_crud.remove_user_role(session, link)
             await session.commit()
             await UserQueryService.invalidate_user(user_id)
+            await log_activity(
+                actor_id=admin_user.id,
+                action=ActivityAction.UNASSIGN,
+                resource_type="user",
+                resource_id=str(user_id),
+                actor_name=admin_user.full_name,
+                details={"role_id": str(role_id)},
+            )
 
         user = await self.user_crud.get_user_with_roles(session, user_id)
         if not user:

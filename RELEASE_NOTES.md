@@ -9,6 +9,8 @@ Follow [Semantic Versioning](https://semver.org/).
 
 Found by re-verifying every doc against the code. Five places where the code did not do what the
 docs promised were fixed in code; two that need a product decision are recorded, not changed.
+A review of `app/iam` then found more; the high- and medium-severity ones are fixed here, and the
+rest are tracked in `docs/planning/iam-fixes.md`.
 
 ### Security
 - **`developer_admin` could be granted through the API.** `POST /users/{user_id}/roles` assigned any
@@ -22,7 +24,23 @@ docs promised were fixed in code; two that need a product decision are recorded,
   implemented; with phone OTP on, anyone reading the logs could sign in as any phone user. In
   production it now refuses with `SmsProviderNotConfiguredError` (503).
 
+- **Any signed-in user could list other users' contact details.** `GET /users/me/by-role/{role}` is
+  an ungated picker and sign-up is public, yet it returned email, phone, `is_superuser` and last
+  login — for `developer_admin` too. It now returns `UserOption`: id, name and avatar.
+- **A password change left every other session signed in**, so a stolen refresh token outlived the
+  password. Change-password now revokes all the user's refresh tokens in the same transaction.
+
 ### Fixed
+- 🐞 **No `app/iam` action ever reached the audit log.** The adapter in `app/iam/auth/activity.py`
+  passed plain strings where `app.activity` expects its `ActivityAction`, so every write raised —
+  and the adapter swallowed it. Sign-ins, user changes and deletes now land; a failed write is
+  logged as a warning. `REGISTER` and `RESTORE` were added to `ActivityAction`.
+- 🐞 **Role and permission changes, and hard deletes, wrote no audit entry at all.** Assigning and
+  removing a role, setting a role's permissions and permanently deleting a user are now recorded.
+- 🐞 **Restoring a deleted user made them active**, undoing a suspension made before the delete.
+  The user now comes back with the status they had.
+- 🐞 **An admin could give a user a phone number another user already had**, after which phone
+  sign-in for that number failed. The admin update now refuses it, as self-service already did.
 - 🐞 **A revoked permission came back at the next restart.** The seed runs in `lifespan` and
   inserted every missing catalogue grant for every role, so revoking one on the access-control
   screen lasted only until the app restarted. It now seeds a grant only when its role or its
@@ -81,6 +99,11 @@ returns 503 in production; `%` / `_` in search input now match literally; and th
 re-grants revoked permissions — a grant the old seed restored after you revoked it must be revoked
 once more, and a new catalogue grant between an existing role and an existing permission needs a
 data migration.
+
+Two more for clients: `GET /users/me/by-role/{role}` now returns only `id`, `full_name` and
+`avatar_url`; and after a password change every device, including the one that changed it, must sign
+in again once its access token expires. The audit log starts receiving `app/iam` entries — sign-ins
+included — so expect it to grow faster.
 
 For your own modules, `test_module_anatomy.py` now fails until each one's docs are moved:
 `git mv app/<module>/<module>_doc/how-it-works.md app/<module>/README.md`, any other file into

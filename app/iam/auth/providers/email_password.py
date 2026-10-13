@@ -3,7 +3,7 @@
 Routes are thin parsers; all business logic lives in ``EmailPasswordService``.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.core.database import SessionDep
 from app.core.logging import get_logger
 from app.core.utils import utc_now
 from app.iam.auth.activity import ActivityAction, log_activity
+from app.iam.auth.crud import RefreshTokenCRUD, refresh_token_crud
 from app.iam.auth.exceptions import (
     InvalidCredentialsError,
     PasswordLoginUnavailableError,
@@ -31,8 +32,8 @@ from app.iam.auth.tokens import (
 )
 from app.iam.dependencies import CurrentUserDep, TokenServiceDep
 from app.iam.exceptions import UserAlreadyExistsError
-from app.iam.user.models import User
 from app.iam.user.crud import UserCRUD, user_crud
+from app.iam.user.models import User
 from app.iam.user.query_service import UserQueryService
 from app.iam.user.schemas import UserCreate, UserResponse
 
@@ -46,13 +47,17 @@ class EmailPasswordService:
     to ``TokenService.issue_tokens`` which commits after token persistence.
     """
 
-    def __init__(self, user_crud: UserCRUD, token_service: TokenService):
+    def __init__(
+        self,
+        user_crud: UserCRUD,
+        token_service: TokenService,
+        refresh_token_crud: RefreshTokenCRUD,
+    ):
         self.user_crud = user_crud
         self.token_service = token_service
+        self.refresh_token_crud = refresh_token_crud
 
-    async def register(
-        self, session: AsyncSession, data: UserCreate
-    ) -> UserResponse:
+    async def register(self, session: AsyncSession, data: UserCreate) -> UserResponse:
         if await self.user_crud.get_by_email(session, data.email):
             raise UserAlreadyExistsError(data.email)
 
@@ -78,8 +83,8 @@ class EmailPasswordService:
         session: AsyncSession,
         credentials: UserLogin,
         *,
-        device_info: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        device_info: str | None = None,
+        ip_address: str | None = None,
     ) -> TokenResponse:
         user = await self.user_crud.get_by_email(session, credentials.email)
 
@@ -92,9 +97,7 @@ class EmailPasswordService:
             if user is not None and user.hashed_password
             else DUMMY_PASSWORD_HASH
         )
-        password_ok, upgraded_hash = verify_and_update_password(
-            credentials.password, stored_hash
-        )
+        password_ok, upgraded_hash = verify_and_update_password(credentials.password, stored_hash)
 
         if user is None:
             raise InvalidCredentialsError()
@@ -140,6 +143,9 @@ class EmailPasswordService:
 
         current_user.hashed_password = get_password_hash(data.new_password)
         current_user.updated_at = utc_now()
+        # Sign out every session, in the same transaction: a stolen refresh token must not
+        # outlive the password it was issued under.
+        revoked = await self.refresh_token_crud.revoke_all_user_tokens(session, current_user.id)
         await session.commit()
         await UserQueryService.invalidate_user(current_user.id)
 
@@ -149,21 +155,22 @@ class EmailPasswordService:
             resource_type="user",
             resource_id=str(current_user.id),
             actor_name=current_user.full_name,
-            details={"email": current_user.email},
+            details={"email": current_user.email, "revoked_tokens": revoked},
         )
 
 
 # ── DI wiring ─────────────────────────────────────────────────────────────────
 
+
 def get_email_password_service(
     token_service: TokenServiceDep,
 ) -> EmailPasswordService:
-    return EmailPasswordService(user_crud=user_crud, token_service=token_service)
+    return EmailPasswordService(
+        user_crud=user_crud, token_service=token_service, refresh_token_crud=refresh_token_crud
+    )
 
 
-EmailPasswordServiceDep = Annotated[
-    EmailPasswordService, Depends(get_email_password_service)
-]
+EmailPasswordServiceDep = Annotated[EmailPasswordService, Depends(get_email_password_service)]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -191,9 +198,7 @@ async def login(
     """Authenticate with email and password; returns access + refresh tokens."""
     device_info = request.headers.get("User-Agent")
     ip_address = request.client.host if request.client else None
-    return await service.login(
-        session, credentials, device_info=device_info, ip_address=ip_address
-    )
+    return await service.login(session, credentials, device_info=device_info, ip_address=ip_address)
 
 
 @router.post("/change-password")
@@ -203,7 +208,11 @@ async def change_password(
     current_user: CurrentUserDep,
     service: EmailPasswordServiceDep,
 ) -> dict:
-    """Change the authenticated user's password."""
+    """Change the authenticated user's password and sign out every session.
+
+    All refresh tokens are revoked, this device's included: it signs in again when its access
+    token expires.
+    """
     await service.change_password(session, current_user, data)
     return {"status": "success"}
 

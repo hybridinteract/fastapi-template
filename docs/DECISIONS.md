@@ -208,3 +208,24 @@ per-module `CLAUDE.md` (agent-only, and the path-scoped `.claude/rules/` already
 
 **Owner:** [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md) §6.3; enforced by
 `app/core/tests/test_module_anatomy.py`.
+
+## 13 October 2026 — The users-by-role picker returns options; a password change signs out every session
+
+**Decided:**
+- `GET /users/me/by-role/{role}` stays a picker — authenticated, ungated
+  (`.claude/rules/permissions.md` rule 9) — and returns `UserOption` (`id`, `full_name`,
+  `avatar_url`) instead of `UserResponse`.
+- `POST /auth/password/change-password` revokes every refresh token of the user, in the same
+  transaction as the new password, and returns no new tokens.
+
+**Why:** Sign-up is public, so the picker's audience is anyone; it returned email, phone,
+`is_superuser` and last login, and `developer_admin` was a valid role to ask for. A password change
+is the standard moment to end other sessions: a refresh token stolen before it must not survive it.
+
+**Rejected:** Gating the picker on `users:read_all` — it would leave every role without that
+permission looking at an empty picker, which rule 9 forbids. Returning a fresh token pair from
+change-password to keep the current device signed in — an API change for every client, for a
+sign-in the device repeats within the access-token lifetime (120 minutes by default).
+
+**Owner:** [`../app/iam/README.md`](../app/iam/README.md) (sessions);
+[`../.claude/rules/permissions.md`](../.claude/rules/permissions.md) (the picker).

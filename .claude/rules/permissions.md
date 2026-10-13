@@ -63,6 +63,8 @@ paths:
   protection is a throttle instead of a gate — **per identity, not per IP**, because behind a proxy
   every browser shares one source IP, so a per-IP cap throttles everyone at once and stops nobody.
   Today only the phone OTP has one; see Known gaps.
+- **`GET /users/me/by-role/{role}` is a picker** (rule 9): authenticated, ungated, and it returns
+  `UserOption` — id, name, avatar — never contact details or access flags, because sign-up is public.
 - **`PermissionService` and `AdminService` compare `role.name` to `DEVELOPER_ADMIN_ROLE`.** Neither is
   a gate (rule 1): both *protect* the bypass role — its grants cannot be edited
   (`ProtectedRoleError`) and it cannot be granted (`RoleNotGrantableError`).
