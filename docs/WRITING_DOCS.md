@@ -32,6 +32,19 @@ which one is current.
 
 **If it does not fit a row, it is probably two documents.**
 
+## Voice — write about the application, not the template
+
+**Every doc describes the application this repo is.** A project starts as a copy of the template and
+keeps its docs, so a doc that says "this template" is wrong the moment it is copied. Write "the app",
+"this codebase" or "the project", and "ships with" becomes "comes with" or "starts with".
+
+- **Only the root `README.md` talks about the template** — what it is, its philosophy, and how to
+  start a project from it. A new project replaces that file with its own.
+- **Records keep their words.** `docs/DECISIONS.md`, `RELEASE_NOTES.md`, `docs/planning/` and
+  `docs/research/` are dated history; do not reword an old entry.
+- Technical names that contain the word are fine: `file_template`, `_TEMPLATE.md`, Postgres
+  `CREATE DATABASE … TEMPLATE`.
+
 ## Naming
 
 - **Root of `docs/`: `SCREAMING_SNAKE.md`** — reserved for the specs that own a whole subject.

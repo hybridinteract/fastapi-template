@@ -1,10 +1,10 @@
 # Deployment
 
-> How this template gets onto a server.
+> How the app gets onto a server.
 > Last verified against the code: 13 October 2026.
 
 Deploy with **[deployctl](https://github.com/hybridinteract/deployctl)** — its README is the full
-documentation. This page says how it fits this template; it does not repeat the tool's docs.
+documentation. This page says how it fits this app; it does not repeat the tool's docs.
 
 > The bundled `deploy-v2/` bash scripts were removed in favour of deployctl. Do not reintroduce them.
 

@@ -1,6 +1,6 @@
 ---
 name: review-module
-description: Review a module against this template's conventions before a PR. Use when asked to review a module, check code against the conventions, prepare a pull request, or verify a module was built correctly.
+description: Review a module against the project's conventions before a PR. Use when asked to review a module, check code against the conventions, prepare a pull request, or verify a module was built correctly.
 ---
 
 # Review a module

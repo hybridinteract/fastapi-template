@@ -24,7 +24,7 @@ Nothing else gets a folder. If a document does not fit one of these, it is proba
 |---|---|---|
 | [`PROJECT_CONVENTIONS.md`](PROJECT_CONVENTIONS.md) | **How** backend code is built — layering, DI, naming, models, list endpoints, streaming, Docker | Before your first change, then as reference by section number |
 | [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md) | **Where** code goes — the `core/` gate, the bar for a new module, split-vs-keep-together | Before creating any module or folder |
-| [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) | The Next.js half of the stack — data flow, React Query, state, styling | Only when working on a paired frontend |
+| [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) | The API contract a frontend relies on. Frontend conventions live in the frontend repo | When changing anything a client consumes |
 | [`WRITING_DOCS.md`](WRITING_DOCS.md) | The doc-ownership contract, the naming convention, the freshness stamp | Before writing or moving any `.md` |
 | [`DECISIONS.md`](DECISIONS.md) | **Why** — an append-only log of decisions and reversals | When a convention looks wrong, before changing it |
 

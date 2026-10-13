@@ -34,8 +34,8 @@ Four classifications. This is a different question from shape, and it comes firs
 | **Domain module** | Exactly **one bounded context** | That domain's models → routes | Another domain's logic |
 | **Shared kernel** | Cross-cutting **business primitives**, no HTTP surface, no single owner | Value objects and the rules many domains depend on | Routes, tables, one-domain logic |
 
-In this template: `app/core/` is the technical core; `app/iam`, `app/activity` and
-`app/release_notes` are reusable capabilities. Your project's own modules will be domain modules.
+Here: `app/core/` is the technical core; `app/iam`, `app/activity` and `app/release_notes` are
+reusable capabilities. Every module added for the product itself is a domain module.
 There is no shared kernel here yet — §6.2 describes the shape for the first one.
 
 ## 2. The `core/` gate (strict)
@@ -215,7 +215,7 @@ Rules inside a layer package:
   resolves it through its own registry at runtime, so the circular import never happens.
 - **Each `__init__.py` docstring says what the package holds and why it is split**, and nothing else.
 
-> The template ships no layered module yet — every module here predates this rule and is genuinely
+> There is no layered module here yet — every module here predates this rule and is genuinely
 > small. `/new-module` generates the shape correctly; the trees above are the specification until a
 > module in this repo earns the conversion.
 
@@ -343,7 +343,7 @@ The name says what the thing **is**, not what it is made of or when it was added
 - **Smell list** — if you reach for one of these you have not found the real concept yet:
   `utils`, `helpers`, `common`, `shared`, `misc`, `core_*`, `*_stuff`.
 
-> **On "composite module".** It is this template's own term, not standard vocabulary — there is no
+> **On "composite module".** It is this codebase's own term, not standard vocabulary — there is no
 > established industry name for this file shape. It was chosen because it says *made of parts*
 > without implying size, and because it collides with nothing already in use here: DDD's
 > **Aggregate** is a consistency boundary, **Bounded Context** is the module itself, and **Shared

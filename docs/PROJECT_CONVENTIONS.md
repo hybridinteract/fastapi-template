@@ -1,8 +1,8 @@
 # Project Conventions
 
 > **How** backend code is built in this stack. Hard constraints, for humans and agents equally.
-> Where code *goes* is [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md); the frontend is
-> [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md); the always-loaded summary is
+> Where code *goes* is [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md); the API contract a
+> frontend relies on is [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md); the always-loaded summary is
 > [`../CLAUDE.md`](../CLAUDE.md).
 >
 > `CLAUDE.md` and `.claude/rules/` link here **by section number** — add sections at the end rather
@@ -15,7 +15,7 @@
 
 | Resource | URL | Purpose |
 |----------|-----|---------|
-| Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready starter — clone this, never rebuild from scratch |
+| Upstream template | https://github.com/hybridinteract/fastapi-template | Where this codebase's structure and conventions come from; check its release notes for fixes to pull in |
 | Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical modular monolith + DDD guide |
 | Official FastAPI Skill | https://github.com/fastapi/fastapi/blob/master/fastapi/.agents/skills/fastapi/SKILL.md | Upstream FastAPI conventions these rules are checked against — see §21 |
 | Modernization Tracker | [`planning/modernization.md`](planning/modernization.md) | What has been aligned with the skill, and what is still pending |
@@ -54,7 +54,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 > produces the wrong query.
 
 ### Frontend
-See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §1.
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -95,8 +95,8 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §1.
 │   │   ├── user/                    # User accounts + admin management
 │   │   └── permission/              # Roles, permissions, RBAC guards
 │   │
-│   ├── activity/                    # Append-only audit log (included in template)
-│   ├── release_notes/               # What's New system (included in template)
+│   ├── activity/                    # Append-only audit log
+│   ├── release_notes/               # What's New system
 │   │
 │   └── <feature>/                   # Project-specific domain modules — LAYERS ARE FOLDERS (§4)
 │       ├── __init__.py              # Public API exports only
@@ -139,7 +139,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §1.
 ```
 
 ### Frontend
-See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §2.
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -163,7 +163,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §2.
 | Permissions | `resource:action[:scope]` | `leads:create`, `leads:view:all` |
 
 ### Frontend
-See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §3.
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -584,12 +584,12 @@ PERMISSIONS = [
 
 ### Seed script (`app/iam/seed.py`)
 
-- **Idempotent** — only inserts missing permissions, roles and grants; never deletes. It re-inserts
-  *any* missing catalogue grant, including one an operator revoked — the gap is recorded in
-  [`permissions.md`](../.claude/rules/permissions.md) under Known gaps
+- **Idempotent** — only inserts missing permissions, roles and grants; never deletes. A grant is
+  seeded only when its role or its permission is new to the database, so a revoked grant stays
+  revoked — rule 3 in [`permissions.md`](../.claude/rules/permissions.md)
 - Runs automatically on startup via `lifespan` in `main.py`
-- **It defines nothing itself.** Roles and permissions live in `app/iam/permission_catalog.py`; a
-  downstream project adds its own through `extra_roles()` / `extra_permissions()` in
+- **It defines nothing itself.** Roles and permissions live in `app/iam/permission_catalog.py`; project-specific
+  ones can also come from `extra_roles()` / `extra_permissions()` in
   `app/iam/extensions.py`
 - `developer_admin` bypasses all permission checks, and is never granted through the API
 - `is_system=True` marks a platform role. No route deletes roles today, so the flag guards nothing
@@ -846,7 +846,7 @@ returns a response object, so `-> PNGStreamingResponse` is false and `ty` will f
 
 ## 16. Frontend Patterns
 
-Moved to [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §4.
+Lives in the frontend repo; the API contract it relies on is [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 The section number is kept so §17–§21 do not shift — `CLAUDE.md` and `.claude/rules/`
 link here by number.
 
@@ -890,7 +890,7 @@ link here by number.
 ```
 
 ### Frontend
-See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §5.
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -926,7 +926,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §5.
 - Use `python-jose` or `passlib` — both are unmaintained; use PyJWT and pwdlib (§1)
 
 ### Frontend — never do
-See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §6.
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ### Both — never do
 - Split a file because of its line count — split by entity or cohesive job (§4; `DECISIONS.md`,
@@ -960,7 +960,7 @@ Where we knowingly differ, the reason is recorded here — **do not "fix" these 
 
 | Skill says | We do | Why |
 |------------|-------|-----|
-| Prefer **SQLModel** over SQLAlchemy | SQLAlchemy 2.0 (async) | `CRUDBase[Model, Create, Update]` generics, Alembic autogenerate, the RBAC join tables, and `paginated_select()` are all built on SQLAlchemy Core. SQLModel would be a rewrite of the template's foundation for no functional gain, and its `table=True` models blur the schema/model split that §4 depends on. |
+| Prefer **SQLModel** over SQLAlchemy | SQLAlchemy 2.0 (async) | `CRUDBase[Model, Create, Update]` generics, Alembic autogenerate, the RBAC join tables, and `paginated_select()` are all built on SQLAlchemy Core. SQLModel would be a rewrite of the codebase's foundation for no functional gain, and its `table=True` models blur the schema/model split that §4 depends on. |
 | Use `fastapi dev` / `fastapi run` with a `[tool.fastapi]` entrypoint | `uvicorn app.core.main:app` via Docker Compose | Deployment is containerized; the process is supervised by Compose and the entrypoint scripts in `docker/`. The CLI adds a layer we don't use. |
 | Serve built frontends with `app.frontend()` | Frontend deployed separately | The frontend is a Next.js SSR app, not a static build directory. `app.frontend()` only serves built static assets. |
 

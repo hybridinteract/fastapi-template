@@ -1,258 +1,176 @@
 # FastAPI Backend Template
 
-A production-ready, reusable FastAPI backend template with:
+**A template, not an application.** Nobody deploys this repository. You start a project from it,
+rename it, delete what you do not need, and build your product on top. Everything you get — auth,
+RBAC, background jobs, migrations, the conventions and the docs — then belongs to your project.
 
-- ⚡ **FastAPI** + **SQLAlchemy 2.0** async ORM
-- 🔐 **JWT auth** with refresh tokens and **RBAC** (Role-Based Access Control)
-- 🗄️ **PostgreSQL** (asyncpg) + **Redis** (caching + Celery broker)
-- ⚙️ **Celery** background tasks with **Flower** monitoring
-- 📦 **Object storage** abstraction (DigitalOcean Spaces / S3-compatible)
-- 🔄 **Alembic** async migrations
-- 📊 **Prometheus** metrics via `/metrics`
-- 🪵 Rotating file + colored console **logging**
-- 🐳 **Docker Compose** ready (multi-stage Dockerfile)
-- 📓 **Activity log** (append-only audit trail)
-- 🗒️ **Release notes** (What's New system)
+This README is the only file that talks about the template. Every other doc is written about
+*the app*, so it stays correct after you copy it
+([`docs/WRITING_DOCS.md`](docs/WRITING_DOCS.md) → Voice). Replace this README with your project's
+own once you have started.
 
 ---
 
-## 🚀 Quick Start
+## What you start with
 
-### 1. Setup Environment
+- **FastAPI** + **async SQLAlchemy 2.0** (`Mapped` / `mapped_column`) + **Alembic** + **Pydantic v2**
+- **PostgreSQL** (asyncpg) and **Redis** (cache + Celery broker)
+- **Auth** — JWT access + rotating refresh tokens; email/password, Google OAuth and phone OTP providers
+- **RBAC** — permissions in code (`app/iam/permission_catalog.py`), roles as editable bundles
+- **Celery** background tasks, **Flower** monitoring
+- **Object storage** abstraction (S3-compatible — DigitalOcean Spaces, S3)
+- **Prometheus** metrics at `/metrics`, rotating file + console logging
+- **Activity log** (append-only audit trail) and **release notes** ("What's New") — both optional
+- **Docker Compose** for local development; CI with lint, the fast tests, and a migration round-trip
+- **An AI-agent setup** — `CLAUDE.md`, path-scoped rules in `.claude/rules/`, and skills
+
+---
+
+## Philosophy
+
+- **A modular monolith.** One package per business module (`iam/`, `activity/`, `<your feature>/`),
+  never grouped by technical concern. Modules talk to each other only through `dependencies.py`.
+- **Strict layering.** `Route → Service → CRUD → Model`. Routes are thin, the service holds the
+  business rules and owns the transaction (one `commit`), CRUD only flushes.
+- **Conventions are enforced, not suggested.** The rules that fail *silently* when broken — a model
+  autogenerate cannot see, a `commit()` in CRUD, a module missing a required file, a `/{id}` route
+  swallowing its siblings — each have a test that fails instead.
+- **Permissions, not roles.** Every route gates on a permission; a role is a bundle an admin rearranges
+  at runtime.
+- **One owner per rule.** Each rule is written in full in exactly one file; everywhere else links to
+  it. Every doc carries a "Last verified against the code" date, checked by `scripts/check_docs.py`.
+- **Maintained, boring dependencies.** PyJWT and pwdlib, not python-jose and passlib; HTTPX, not
+  requests.
+
+---
+
+## Start a project from this template
+
+### 1. Create your repository
+
+On GitHub, **Use this template → Create a new repository**. Or clone it and keep the template as a
+second remote, so you can pull its fixes later:
+
+```bash
+git clone https://github.com/hybridinteract/fastapi-template my-app
+```
+
+```bash
+git -C my-app remote rename origin template
+```
+
+```bash
+git -C my-app remote add origin <your-repository-url>
+```
+
+### 2. Make it yours
+
+| Where | Change |
+|---|---|
+| `pyproject.toml` | `name`, `description`, and `version` back to `0.1.0` |
+| `.env` (from `.env.example`) | `APP_NAME` — it also names the Docker containers, network and volumes |
+| `README.md` | Replace this file with your project's README |
+| `RELEASE_NOTES.md` | Start empty — the entries here are the template's history, not yours |
+| `docs/DECISIONS.md` | Keep it (these are decisions you inherit) and append one: the template version you started from |
+
+### 3. Delete what you do not use
+
+`app/iam` is the core — keep it. `app/activity` and `app/release_notes` are optional. To remove one:
+drop its router from `app/apis/v1.py` and its models from `app/core/alembic_models_import.py`,
+delete the folder, and generate a migration that drops its tables. Delete the `.claude/rules/` files
+for anything you removed, and record each deletion in `docs/DECISIONS.md`.
+
+### 4. Run it
+
+[`docs/guides/local-environment.md`](docs/guides/local-environment.md) is the full guide. In short:
+tests, lint and doc checks run on the host; alembic and management commands run in the container.
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set:
-#   APP_NAME, POSTGRES_*, SECRET_KEY, JWT_SECRET_KEY
 ```
 
-### 2. Install Dependencies
-
 ```bash
-pip install uv
-uv pip install -r pyproject.toml
+uv sync --all-extras --dev
 ```
 
-### 3. Start Infrastructure (Docker)
-
 ```bash
-docker-compose up -d postgres redis
+docker compose up -d
 ```
 
-### 4. Run Migrations
-
 ```bash
-alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
-### 5. Seed Database (roles + permissions)
-
 ```bash
-python -m app.iam.seed
+docker compose exec api python -m app.iam.create_admin
 ```
 
-> **Note:** Seeding also runs automatically at startup. It is idempotent.
+The API is at <http://localhost:8000/docs>, Flower at <http://localhost:5555>. The seed (roles and
+permissions) runs on every startup.
 
-### 6. Create Developer Admin
+### 5. Build your first module
 
-```bash
-python -m app.iam.create_admin
-```
+Read [`CLAUDE.md`](CLAUDE.md) — it is short, and it is the guardrail. Then `/new-module` (or
+[`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §6 by hand) to choose the module's shape
+and scaffold it. Deploying: [`docs/guides/deployment.md`](docs/guides/deployment.md).
 
-### 7. Start Application
+### 6. Pull in template fixes later
 
-```bash
-# Development (with hot reload)
-uvicorn app.core.main:app --reload
-
-# With Docker (all services)
-docker-compose up -d
-```
-
-### 8. Access API
-
-| URL | Description |
-|-----|-------------|
-| http://localhost:8000/docs | Swagger UI |
-| http://localhost:8000/redoc | ReDoc |
-| http://localhost:8000/health | Health check |
-| http://localhost:8000/metrics | Prometheus metrics |
-| http://localhost:5555 | Flower (Celery monitoring) |
-
----
-
-## 🐳 Docker
+The template keeps a [`RELEASE_NOTES.md`](https://github.com/hybridinteract/fastapi-template/blob/main/RELEASE_NOTES.md)
+with an **Upgrade** section per release. Read it, then merge or cherry-pick from the `template`
+remote:
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View API logs
-docker-compose logs -f api
-
-# Stop all services
-docker-compose down
-
-# Stop and remove volumes (WARNING: destroys data)
-docker-compose down -v
-```
-
-### Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `api` | 8000 | FastAPI application |
-| `postgres` | 5432 | PostgreSQL database |
-| `redis` | 6379 | Redis (cache + Celery broker) |
-| `celery_worker` | — | Background task worker |
-| `flower` | 5555 | Celery task monitoring UI |
-
----
-
-## ⚡ Celery (Background Tasks)
-
-```bash
-# Start worker locally (without Docker)
-celery -A app.core.background.celery_app:celery_app worker --loglevel=info
-
-# Flower monitoring locally
-celery -A app.core.background.celery_app:celery_app flower --port=5555
+git fetch template
 ```
 
 ---
 
-## 📁 Project Structure
+## Structure
 
 ```
 app/
-├── core/                    # Shared infrastructure (never project-specific)
-│   ├── main.py              # FastAPI app factory + lifespan
-│   ├── settings.py          # Pydantic Settings (env-based config)
-│   ├── database.py          # Async SQLAlchemy engine + session
-│   ├── models.py            # DeclarativeBase for all models
-│   ├── crud.py              # Generic CRUDBase[Model, Create, Update]
-│   ├── exceptions.py        # Global exception handlers
-│   ├── middleware.py        # CORS, GZip, TrustedHost, timing
-│   ├── logging.py           # Rotating + colored console logging
-│   ├── metrics.py           # Prometheus instrumentator
-│   ├── utils.py             # utc_now() and shared helpers
-│   ├── alembic_models_import.py  # Single place to register all models
-│   ├── background/          # Celery app + task infrastructure
-│   ├── cache/               # Redis cache abstraction
-│   └── object_storage/      # S3-compatible file storage
-│
-├── apis/
-│   └── v1.py                # Aggregates all module routers
-│
-├── iam/                     # Identity & access: auth + users + RBAC
-│   ├── __init__.py          # Public API exports (routers, deps, guards)
-│   ├── config.py            # AuthConfig — JWT, providers, role names
-│   ├── dependencies.py      # DI wiring (CRUD → Service)
-│   ├── permission_catalog.py # Roles + permission constants ← edit this
-│   ├── seed.py              # Idempotent role/permission seeder ← edit this
-│   ├── create_admin.py      # Interactive developer-admin creation CLI
-│   ├── extensions.py        # ExtraUserFieldsMixin for project columns
-│   ├── iam_doc/             # Module documentation
-│   ├── auth/                # Login, refresh, logout, tokens, providers
-│   ├── user/                # User accounts + admin user management
-│   └── permission/          # Roles, permissions, RBAC route guards
-│
-├── activity/                # Append-only audit log module
-├── release_notes/           # "What's New" release notes module
-│
-└── <your_module>/           # Add new feature modules here
-    ├── models/              # SQLAlchemy models
-    ├── schemas/             # Pydantic schemas
-    ├── crud/                # CRUD operations
-    ├── services/            # Business logic
-    ├── routes/              # FastAPI routers
-    ├── dependencies.py      # FastAPI Depends() helpers
-    ├── exceptions.py        # Module-specific exceptions
-    ├── enums.py             # Module enums
-    └── permissions.py       # Permission constants
-
-migrations/                  # Alembic migration files
-docker/                      # Dockerfile + entrypoint scripts
+├── core/          # Infrastructure with zero domain knowledge — settings, database, CRUDBase,
+│                  #   exception handlers, middleware, logging, cache, background, object storage
+├── apis/v1.py     # Registers every module's router (literal prefixes before /{id} ones)
+├── iam/           # Identity & access: auth/, user/, permission/ — the reference module
+├── activity/      # Append-only audit log (optional)
+├── release_notes/ # "What's New" (optional)
+└── <module>/      # Your modules — shape and files: CLAUDE.md §1
+migrations/        # Alembic revisions
+docker/            # Dockerfile and entrypoints
+docs/              # Conventions, guides, plans, research, decisions
+.claude/           # Agent rules, skills and hooks
 ```
 
----
-
-## 🏛️ Engineering Conventions
-
-A **modular monolith** built on Domain-Driven Design: files are grouped by feature
-(`iam/`, `activity/`, `<your feature>/`), never by technical concern. Strict layering —
-`Route → Service → CRUD → Model` — with the service owning the transaction.
-
-The conventions are not repeated here, because a summary beside the real thing drifts from
-it. Each lives in exactly one place:
+## Where the conventions live
 
 | Read | For |
 |---|---|
-| **[`CLAUDE.md`](CLAUDE.md)** | The rules that matter most, in ~170 lines. **Start here.** AI agents load it automatically at the start of every session |
-| [`docs/README.md`](docs/README.md) | The map of every other document |
-| [`docs/PROJECT_CONVENTIONS.md`](docs/PROJECT_CONVENTIONS.md) | **How** code is built — 21 numbered sections |
-| [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) | **Where** code goes. Read before creating any module |
-| [`.claude/rules/`](.claude/rules/) | One file per cross-cutting rule. An agent loads each one automatically when it opens a file that rule governs |
+| [`CLAUDE.md`](CLAUDE.md) | The guardrail — the rules that matter most, one line each. **Start here** |
+| [`docs/PROJECT_CONVENTIONS.md`](docs/PROJECT_CONVENTIONS.md) | **How** code is built |
+| [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) | **Where** code goes — read before creating a module |
+| [`.claude/rules/`](.claude/rules/) | One cross-cutting rule per file; an agent loads each when it opens a file the rule governs |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | **Why** things are the way they are |
+| [`docs/README.md`](docs/README.md) | The map of everything else |
 
 Org-wide standards:
 [engineering.hybridinteractive.in/standards/project-structure](https://engineering.hybridinteractive.in/standards/project-structure/)
 
-### Checks
+## Checks
 
 ```bash
-uv run pytest                    # convention tests + the fast tier
-python3 scripts/check_docs.py    # links, doc freshness, rule frontmatter
-uv run ruff check app            # inherited baseline — see docs/planning/modernization.md
+uv run pytest
 ```
 
-Four tests enforce the rules that otherwise fail **silently**: a model missing from
-`alembic_models_import.py`, a `commit()` in the CRUD layer, a module that does not match the
-contract for its shape, and a router registered in an order that lets `/{id}` swallow its siblings.
-When one fails, fix the code — not the test.
+```bash
+python3 scripts/check_docs.py
+```
 
-### Module shapes
+```bash
+uv run ruff check app
+```
 
-A module is one of four shapes, chosen deliberately before the first file — **flat**, **layered**
-(the default for a domain module), **composite** (sub-modules with a declared import rank), or a
-**shared kernel** (business primitives, no HTTP). The decision procedure is three questions:
-[`CLAUDE.md`](CLAUDE.md) §1, in full at
-[`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §6. `/new-module` walks it for you.
-
-### Working with an AI agent
-
-`CLAUDE.md` is loaded every session; `.claude/rules/*.md` load only when a matching file is
-opened, so deep rules cost nothing until they are relevant. Three skills are available:
-`/new-module`, `/new-migration`, `/review-module`.
-
----
-
-## 📝 Authentication Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/auth/register` | Register user |
-| `POST` | `/api/v1/auth/login` | Login (returns access + refresh tokens) |
-| `POST` | `/api/v1/auth/refresh` | Refresh access token |
-| `POST` | `/api/v1/auth/logout` | Logout (revoke refresh token) |
-| `GET`  | `/api/v1/auth/me` | Get current user |
-| `PUT`  | `/api/v1/auth/me` | Update profile |
-
----
-
-## ⚙️ Configuration Reference
-
-All configuration is via environment variables (`.env` file). Key variables:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `APP_NAME` | No | Application name (default: MyApp) |
-| `POSTGRES_USER` | **Yes** | Database username |
-| `POSTGRES_PASSWORD` | **Yes** | Database password |
-| `POSTGRES_DB` | **Yes** | Database name |
-| `SECRET_KEY` | **Yes** | Min 32 chars — for signing |
-| `JWT_SECRET_KEY` | **Yes** | Min 32 chars — for JWT tokens |
-| `REDIS_HOST` | No | Redis host (default: localhost) |
-| `ENVIRONMENT` | No | development/staging/production |
-
-See `.env.example` for the full list.
+`uv run pytest` is the fast tier (no database), including the convention tests; `uv run pytest -m ""`
+adds the integration tests and needs Postgres. When a convention test fails, fix the code, not the
+test.

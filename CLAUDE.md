@@ -1,4 +1,4 @@
-# CLAUDE.md — FastAPI Backend Template
+# CLAUDE.md — the guardrail
 
 Read this before adding or changing anything. It is the **guardrail** — one line per rule, with a
 link to the place that states the rule in full. It is not the spec.
@@ -16,14 +16,14 @@ link to the place that states the rule in full. It is not the spec.
 
 <!--
 MAINTAINER NOTE (stripped before this file reaches the model — free to write).
-This is a TEMPLATE. Downstream projects: delete rules for modules you removed, and add your own
-domain rules to `.claude/rules/`, not here. Keep this file under 200 lines; `scripts/check_docs.py`
+Delete the rules for modules this project removed, and put new domain rules in `.claude/rules/`,
+not here. Keep this file under 200 lines; `scripts/check_docs.py`
 fails the build otherwise. Rationale for the budget: docs/DECISIONS.md, 9 September 2026.
 -->
 
-**This is a starter template, not a product.** `app/iam`, `app/activity` and `app/release_notes` ship
-with it. `app/iam` is the reference module — copy its shape. Delete what your project does not use,
-and say so in `docs/DECISIONS.md`.
+**`app/iam`, `app/activity` and `app/release_notes` are the starting modules.** `app/iam` is the
+reference module — copy its shape. A module this project does not use is deleted, and the deletion
+recorded in `docs/DECISIONS.md`.
 
 Stack: FastAPI · **async SQLAlchemy 2.0** (`Mapped`/`mapped_column`) · Alembic · Pydantic v2 ·
 Postgres (asyncpg) · Redis · Celery · pytest (`asyncio_mode=auto`) · uv. Modular monolith, one

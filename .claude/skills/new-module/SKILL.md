@@ -1,6 +1,6 @@
 ---
 name: new-module
-description: Choose a module's shape and scaffold it to this template's anatomy, then walk the registration checklist. Use when creating a new module, adding a domain area or feature package under app/, when asked to "add a <thing> module", or when deciding whether something should be flat, layered, composite or a shared kernel.
+description: Choose a module's shape and scaffold it to the module anatomy in CLAUDE.md §1, then walk the registration checklist. Use when creating a new module, adding a domain area or feature package under app/, when asked to "add a <thing> module", or when deciding whether something should be flat, layered, composite or a shared kernel.
 ---
 
 # New module

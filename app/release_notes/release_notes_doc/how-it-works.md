@@ -42,7 +42,7 @@ place where an ungated read is correct — it is the product's own changelog.
   per mutation and then `refresh()`.
 - **Errors come from `exceptions.py`.** `ReleaseNoteNotFoundError` (404) and
   `ReleaseNoteVersionExistsError` (409). Never build a raw `HTTPException` here — `CLAUDE.md` §6.
-- **This module is a template default.** If your product announces changes some other way, delete it:
+- **This module is optional.** If the product announces changes some other way, delete it:
   drop the router from `app/apis/v1.py`, the model from `app/core/alembic_models_import.py`, and write
   the removal down in `docs/DECISIONS.md`.
 

@@ -40,7 +40,7 @@ app/iam/
 ├── dependencies.py        # DI wiring (CRUD → Service), the Dep aliases
 ├── enums.py               # UserStatus
 ├── exceptions.py          # module-level exceptions
-├── extensions.py          # extension points for downstream projects
+├── extensions.py          # extension points for project-specific fields and roles
 ├── permission_catalog.py  # PLATFORM_ROLES / PERMISSIONS / ROLE_PERMISSIONS
 ├── seed.py                # idempotent seeder — `python -m app.iam.seed`
 ├── create_admin.py        # `python -m app.iam.create_admin`
@@ -87,8 +87,8 @@ an upgraded hash when it meets an older scheme — so hashes migrate forward on 
 ## Roles and permissions
 
 Permission names are `resource:action` — `users:read`, `activity:read_all`. The
-catalogue lives in `permission_catalog.py` as code, not data. Three roles ship
-with the template:
+catalogue lives in `permission_catalog.py` as code, not data. Three roles come
+with the module:
 
 | Role | What it is |
 |---|---|
@@ -134,7 +134,7 @@ migration, because the seed will simply create the new name alongside the old.
 
 Run it on every deploy; it is safe to run repeatedly.
 
-## Extending it from a downstream project
+## Extending it without editing the module
 
 `extensions.py` is the seam, so projects do not fork the module:
 

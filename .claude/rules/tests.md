@@ -5,7 +5,7 @@ paths:
 ---
 # Tests
 
-> Last verified against the code: 12 October 2026.
+> Last verified against the code: 13 October 2026.
 
 ## The rules
 
@@ -65,9 +65,9 @@ sub-module rather than at the root. It also checks that a composite keeps **one*
 
 ## Known gaps
 
-- **The template ships convention tests and one behaviour test** —
-  `app/activity/tests/test_list_filters.py`, a database-free regression test for the `action` filter.
-  A new project should add real tests per module; the convention tests are the floor, not the target.
+- **Behaviour tests are few** — `app/activity/tests/` and `app/iam/tests/`, database-free regression
+  tests for bugs that were fixed. Every module should add its own; the convention tests are the
+  floor, not the target.
 - **A model with no migration is caught only by CI's integration job** (`alembic check`, added after
   the `oauth_accounts` and `phone_otps` tables shipped without one — migration `43b28eb98417`). The
   fast tier cannot see it; run `alembic check` locally after any model change.
@@ -76,7 +76,8 @@ sub-module rather than at the root. It also checks that a composite keeps **one*
   rank nor the test — its `auth/` ↔ `user/` cycle is documented in `docs/MODULE_CONVENTIONS.md` §6.2
   as the cautionary tale, not fixed. Do not add the test to `app/iam` without fixing the cycle first:
   a boundary test that starts red gets weakened until it passes.
-- No coverage measurement is configured, deliberately — a coverage number on a template is noise.
+- No coverage measurement is configured, deliberately — a coverage number on a codebase this young
+  is noise.
 
 ## How to re-check this rule
 
