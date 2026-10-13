@@ -70,8 +70,7 @@ def sub_modules(module: Path) -> list[Path]:
         for child in module.iterdir()
         if child.is_dir()
         and (child / "__init__.py").exists()
-        and child.name != "tests"
-        and not child.name.endswith("_doc")
+        and child.name not in ("tests", "docs")
         and _holds_a_layer(child)
     )
 

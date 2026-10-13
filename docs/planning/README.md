@@ -19,8 +19,8 @@ exit criteria somebody else could check without asking you.
 ## Lifecycle
 
 A plan stays here after the feature ships — it is the record of what was intended. When the code
-diverges, update the plan **or** move the durable part into the module's
-`app/<module>/<module>_doc/how-it-works.md` and say in the plan that the note now owns it.
+diverges, update the plan **or** move the durable part into the module's `app/<module>/README.md`
+(or a file in `app/<module>/docs/`) and say in the plan that the module doc now owns it.
 
 Anything decided *while* planning that outlives the feature belongs in
 [`../DECISIONS.md`](../DECISIONS.md).

@@ -65,5 +65,5 @@ Checkable by someone who did not write this plan.
 
 - [ ] <route/behaviour> works end to end
 - [ ] Migration applies **and** reverses
-- [ ] `app/<module>/<module>_doc/how-it-works.md` written
+- [ ] `app/<module>/README.md` written (more than one doc → `app/<module>/docs/`)
 - [ ] `uv run pytest app/<module>` green
