@@ -36,6 +36,9 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 
 ## 2. Shape — before anything else
 
+**Skip §2 and §6 for `app/iam`.** It is the identity module and differs from every domain module
+by design: review its functionality and security only.
+
 **Name the module's shape**, then check it was the right one and that its contract holds.
 `docs/MODULE_CONVENTIONS.md` §6.
 
