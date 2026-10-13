@@ -30,3 +30,4 @@ Anything decided *while* planning that outlives the feature belongs in
 | Plan | Status |
 |---|---|
 | [`modernization.md`](modernization.md) | Aligning the template with the official FastAPI agent skill — Tiers 1–3 done, hygiene items open |
+| [`iam-fixes.md`](iam-fixes.md) | Functionality and security fixes in `app/iam` from the 13 October 2026 review — 0 of 17 done |
