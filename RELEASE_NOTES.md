@@ -5,6 +5,270 @@ Follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.1] — 2026-10-13
+
+Found by re-verifying every doc against the code. Five places where the code did not do what the
+docs promised were fixed in code; two that need a product decision are recorded, not changed.
+A review of `app/iam` then found more; the high- and medium-severity ones are fixed here, and the
+rest are tracked in `docs/planning/iam-fixes.md`.
+
+### Security
+- **`developer_admin` could be granted through the API.** `POST /users/{user_id}/roles` assigned any
+  role id, so a superuser could mint new total-bypass accounts over HTTP, which `CLAUDE.md` §5 forbids.
+  `assign_roles` now refuses it with `RoleNotGrantableError` (403), and checks every role before
+  writing any, so a refused request changes nothing.
+- **An `inactive` user could still sign in.** `PATCH /users/{id}` with `{"status": "inactive"}`
+  leaves `is_active` true, and the gates refused only `suspended` and `pending_verification`. Every
+  status but `active` is now refused at sign-in, on every request, and on token refresh.
+- **The `noop` SMS provider logged OTP codes in production.** It is the default and the only one
+  implemented; with phone OTP on, anyone reading the logs could sign in as any phone user. In
+  production it now refuses with `SmsProviderNotConfiguredError` (503).
+
+- **Any signed-in user could list other users' contact details.** `GET /users/me/by-role/{role}` is
+  an ungated picker and sign-up is public, yet it returned email, phone, `is_superuser` and last
+  login — for `developer_admin` too. It now returns `UserOption`: id, name and avatar.
+- **A password change left every other session signed in**, so a stolen refresh token outlived the
+  password. Change-password now revokes all the user's refresh tokens in the same transaction.
+
+### Fixed
+- 🐞 **No `app/iam` action ever reached the audit log.** The adapter in `app/iam/auth/activity.py`
+  passed plain strings where `app.activity` expects its `ActivityAction`, so every write raised —
+  and the adapter swallowed it. Sign-ins, user changes and deletes now land; a failed write is
+  logged as a warning. `REGISTER` and `RESTORE` were added to `ActivityAction`.
+- 🐞 **Role and permission changes, and hard deletes, wrote no audit entry at all.** Assigning and
+  removing a role, setting a role's permissions and permanently deleting a user are now recorded.
+- 🐞 **Restoring a deleted user made them active**, undoing a suspension made before the delete.
+  The user now comes back with the status they had.
+- 🐞 **An admin could give a user a phone number another user already had**, after which phone
+  sign-in for that number failed. The admin update now refuses it, as self-service already did.
+- 🐞 **A revoked permission came back at the next restart.** The seed runs in `lifespan` and
+  inserted every missing catalogue grant for every role, so revoking one on the access-control
+  screen lasted only until the app restarted. It now seeds a grant only when its role or its
+  permission is new to the database (`CLAUDE.md` §5); new roles and new permissions are still
+  granted as before.
+- 🐞 **`ILIKE` search input was never escaped**, so `50%` matched `500 off`, `a_b` matched `axb`, and
+  a search containing a backslash could not match itself (verified on Postgres 16). New
+  `escape_like()` in `app.core.utils`, used by the activity `actor_name` filter and the user search.
+  The search docs already told you to import it — from a module that never existed.
+
+### Changed
+- `require_permission` denies with named `MissingPermissionError` / `AccessDeniedError` instead of a
+  raw `HTTPException`; status, message and headers are byte-identical.
+- `get_session`'s docstring example showed a route calling CRUD and committing — the pattern
+  `CLAUDE.md` §2 forbids. It now shows route → service.
+
+### Docs
+- **A module's doc is now `app/<module>/README.md`**, with `app/<module>/docs/` for anything more
+  (`docs/DECISIONS.md`, 13 October 2026). `<module>_doc/how-it-works.md` moved to `README.md` in all
+  three modules, and `app/core/crud/SEARCH_STRATEGY.md` to `app/core/crud/docs/search-strategy.md`.
+  `test_module_anatomy.py` now requires the README and flags a leftover `<module>_doc/` folder.
+- All 19 stamped docs re-verified against the code, and their errors fixed in place — among them a
+  seed that "defines all roles" (the catalogue does), a `user/seed.py` and `get_current_active_user`
+  that do not exist, an `AUTH_EXPOSE_DEV_CODES` setting that does not exist, a "no worker
+  healthcheck" gap that was closed, and a task-listing grep that missed `@db_task`.
+- **New `search-endpoint` skill.** It reads the model, asks only for what the code cannot show,
+  picks each field's search technique from the search guide, prepares the table and builds it.
+- **The search guide (`app/core/crud/docs/search-strategy.md`) is rewritten** from the PostgreSQL
+  18, pgvector, SQLAlchemy and Alembic docs, at half the length. It now starts from one default
+  (`ILIKE` plus a GIN trigram index per field) and names the reason for each step up, and adds
+  table preparation: what to index, and what not to until a measurement asks. Its examples were
+  run on PostgreSQL 16. Corrected along the way:
+  - `ILIKE 'term%'` cannot use a plain B-tree; a prefix search needs `lower(col) text_pattern_ops`.
+  - A trigram index on the plain column already serves `ILIKE`; the `lower()` index was redundant.
+  - `similarity(a, b) > 0.3` never uses the index; the `%` / `<%` operators do.
+  - `%` scores a short term against a long value too low; `<%` is the search-box operator.
+  - Full-text ranks were added to trigram scores, which are on another scale; results are now
+    ordered in tiers.
+  - Trigram typo tolerance forgives one letter in a longer word, not a swap in a short one ("jhon"
+    scores 0.20 against "John").
+  - The default sort was chosen in the route, which `CLAUDE.md` §2 forbids; it is now chosen in
+    CRUD.
+- **Less context per task, per Anthropic's skill and memory guidance.** A default search reads only
+  the guide's §1–§7. CLAUDE.md tells agents to read a cited section (`file §N`), not the whole file.
+  `/new-module` keeps its boundary-test script in `templates/`, read only for a composite module.
+  `/review-module` runs in a sub-agent, so its file reads and test output stay out of the main
+  conversation. CLAUDE.md's quoted maintainer note moved into the HTML comment the model never sees.
+- **Recorded in `.claude/rules/permissions.md` → Known gaps, not changed:** 18 admin routes gate on
+  `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; and no
+  auth route has a throttle.
+
+### Upgrade
+Behaviour changes to check against your clients: users with `status = "inactive"` are now locked
+out; assigning `developer_admin` through the API returns 403; phone OTP with `OTP_SMS_PROVIDER=noop`
+returns 503 in production; `%` / `_` in search input now match literally; and the seed no longer
+re-grants revoked permissions — a grant the old seed restored after you revoked it must be revoked
+once more, and a new catalogue grant between an existing role and an existing permission needs a
+data migration.
+
+Two more for clients: `GET /users/me/by-role/{role}` now returns only `id`, `full_name` and
+`avatar_url`; and after a password change every device, including the one that changed it, must sign
+in again once its access token expires. The audit log starts receiving `app/iam` entries — sign-ins
+included — so expect it to grow faster.
+
+For your own modules, `test_module_anatomy.py` now fails until each one's docs are moved:
+`git mv app/<module>/<module>_doc/how-it-works.md app/<module>/README.md`, any other file into
+`app/<module>/docs/`, then `python3 scripts/check_docs.py` to find the links to update.
+
+## [2.3.0] — 2026-10-12
+
+Dependency refresh with security fixes, plus three pre-existing defects found while verifying it.
+**Has a migration** (`43b28eb98417`). Detail and evidence: `docs/planning/modernization.md`,
+"Dependency Refresh 2".
+
+### Security
+- **PyJWT 2.13.0 → 2.15.1** — 2.13.0 carried 14 advisories (1 critical, 5 high, 8 moderate). One reached this
+  code: GHSA-8wjv-2p76-3863, a nested token header that made `jwt.decode()` raise `RecursionError`
+  straight past `decode_token()` — a 500 any caller could trigger. Now a `DecodeError` → 401.
+  The floor is commented as a security floor.
+- **tornado 6.5.10, urllib3 2.8.0, mako 1.4.3** (via flower, boto3, alembic) — 7 more advisories.
+  They are transitive, so their floors are `[tool.uv] constraint-dependencies` in `pyproject.toml`.
+- OSV now reports **0 advisories across all 106 locked packages** (was 21 across 4).
+
+### Fixed
+- 🐞 **Missing migration for `oauth_accounts` and `phone_otps`, and for `users.email` /
+  `users.hashed_password` becoming nullable.** The models arrived on 8 June 2026 (`aafdcc0`) without one, so every
+  database built from migrations lacked both tables and **`GET /users/me` failed** (it lists linked
+  OAuth accounts). New migration `43b28eb98417`; its `downgrade()` refuses, with the reason, while
+  any OAuth- or phone-only user exists, instead of failing on a bare constraint error.
+- 🐞 **`downgrade()` left the `userstatus` and `changetype` enum types behind**, so upgrade →
+  downgrade → upgrade died with `type "userstatus" already exists` — the sequence CI's integration
+  job runs. Both downgrades now drop their type.
+- 🐞 **`GET /activity?action=…` never matched a row.** On Python 3.11+, `str()` of a `(str, Enum)`
+  member is `"ActivityAction.CREATE"`, which the filter upper-cased and compared. All three enums
+  (`ActivityAction`, `UserStatus`, `ChangeType`) are now `StrEnum`; stored values, Pydantic and
+  OpenAPI are unchanged. First behaviour test: `app/activity/tests/test_list_filters.py`.
+
+### Changed
+- **FastAPI 0.141.1 → 0.143.0**, Starlette 1.6.0 → 1.7.0, Pydantic 2.13.4 → 2.14.1, uvicorn 0.54.0,
+  asyncpg 0.32.0, Alembic 1.20.0, SQLAlchemy 2.0.52 → **2.0.54** (fixes an asyncio connection leak),
+  and patch releases across the tree — 42 versions moved in all.
+- **New transitive dependency: `opentelemetry-api`**, required by FastAPI since 0.142.0. Inert here:
+  exporters start only with `FASTAPI_OTEL_AUTO_CONFIGURE=true`.
+- **SQLAlchemy is capped `<2.1`** — a maturity call, not a code one; see `docs/DECISIONS.md`.
+- `HTTP_422_UNPROCESSABLE_ENTITY` → `HTTP_422_UNPROCESSABLE_CONTENT` (RFC 9110; the old name warns).
+- `PermissionChecker` takes `CurrentUserDep` / `SessionDep` instead of bare `Depends()` — same
+  sub-dependencies, now in the house style. New **`CacheDep`** alias in `app.core.cache`; its
+  docstrings, README and examples use it.
+- `ReleaseNote.author` is typed `Mapped["User | None"]`; the mapping is unchanged.
+- **CI:** `actions/checkout` v4 → v7.0.1 and `astral-sh/setup-uv` v5 → v10.3.0, pinned by commit SHA
+  (setup-uv no longer publishes `@v10`); `uv sync --locked`; the integration job runs
+  `alembic check`, so a model with no migration now fails CI.
+- **Tooling:** ruff 0.17.0 and ty 0.0.86, with the pre-commit `rev:`s moved to match
+  (pre-commit-hooks v6.0.0). The `ruff-format` hook stays scoped to code: v0.17.0 added Markdown to
+  its types, which would reformat doc snippets on every doc edit. CI now runs on Python 3.13, the
+  Docker image's, via setup-uv's `python-version` (`.python-version` is gitignored by design).
+
+### Upgrade
+Run `alembic upgrade head` for `43b28eb98417`. If you created `oauth_accounts` or `phone_otps` by
+hand, check the migration against your schema first. Any code doing `str(member)` on these enums
+now gets the value, not `Cls.MEMBER`.
+
+## [2.2.0] — 2026-09-10
+
+Documentation and skills only — **no `app/` behaviour changed**, and `app/iam` was not touched.
+
+### Changed
+- **A module's shape is now chosen, not grown.** A domain module lays each layer out as a folder —
+  `models/`, `schemas/`, `crud/`, `services/`, `routes/` — **from its first commit**. This reverses
+  2.1.0's *"a file becomes a folder when it outgrows itself"*. That rule implies a threshold around
+  600 lines; the largest file in this repo is 354, so it never fired and the decision was being made
+  by accident. Reasoning and the tiebreaker: `docs/DECISIONS.md`, 10 September 2026.
+- **Four named shapes, with a three-question decision procedure**: **flat**, **layered** (the
+  default), **composite** (sub-modules with a declared import rank), **shared kernel** (business
+  primitives, no HTTP surface, no tables). `docs/MODULE_CONVENTIONS.md` §6 holds the contracts;
+  `CLAUDE.md` §1 holds the procedure. The shape and the step that chose it go in the module's
+  `how-it-works.md`.
+- **`app/core/tests/test_module_anatomy.py` is shape-aware.** It reads the shape from the layout and
+  applies that shape's contract — a shared kernel has no `dependencies.py`, a composite may carry
+  `exceptions.py` per sub-module — and additionally checks that a composite keeps **one**
+  `dependencies.py`, `tests/` and `<module>_doc/` at its root. Two new tests; suite is 14, was 12.
+- **`XListParams` moves from `schemas.py` to a flat `list_params.py`** in new modules, so `schemas/`
+  can stay strictly one sibling per entity. `app/activity` predates this and is unchanged.
+- **`/new-module` now decides the shape first** and branches four ways. It carries a
+  `test_module_boundary.py` template, parameterised by the rank list, that resolves relative imports
+  by counting dots and includes a `dependencies.py` constructor-injection check — the one place a
+  rank can invert with no sub-module file importing upward.
+- **`/review-module` gains a shape section**, checked before anything else.
+- `docs/PROJECT_CONVENTIONS.md` §2 and §4 document layer packages and the per-`__init__.py`
+  contracts; §10 documents `list_params.py`.
+
+### Added
+- `models/__init__.py` must re-export **every** model — `alembic_models_import.py` imports the
+  package, so an omission is the same silent failure as an unregistered model, one level down.
+  Recorded in `.claude/rules/models-and-migrations.md`, along with the `TYPE_CHECKING` rule for
+  cross-sibling relationships.
+- `crud/__init__.py` re-exports each class **and** its singleton; `routes/__init__.py` builds no
+  aggregator.
+- `app/core/tests/conventions.py` gains `module_shape()` and `sub_modules()`.
+
+### Known
+- **`app/iam` is a composite module with no rank and no boundary test, and its boundary has already
+  dissolved** — `auth/` imports `user/` in 8 places, `user/services.py` imports `auth/` in 4, held
+  together by one function-local import at `app/iam/auth/current_user.py:44`. Documented in
+  `docs/MODULE_CONVENTIONS.md` §6.2 as the cautionary tale; **not fixed here**. Adding the boundary
+  test before fixing the cycle would ship a test that starts red.
+- **The template still contains no layered module** — every module here predates the rule and is
+  genuinely small. `/new-module` generates the shape; the docs say so rather than hiding it.
+
+## [2.1.0] — 2026-09-09
+
+### Added
+- **`CLAUDE.md`** — a 172-line guardrail, loaded in full by AI coding agents at the start of
+  every session. Capped at 200 lines and enforced by `scripts/check_docs.py`.
+- **`.claude/rules/`** — six path-scoped rule files (layering, routes/DI,
+  models/migrations, permissions, background tasks, tests). Each declares `paths:` in
+  frontmatter and is loaded automatically only when a file it governs is opened, so deep
+  rules cost no context on unrelated work.
+- **`.claude/skills/`** — `/new-module`, `/new-migration`, `/review-module`.
+- **`.claude/settings.json`** and a `PostToolUse` hook that runs `ruff` on the file an agent
+  just edited. Personal settings stay in the now-gitignored `settings.local.json`.
+- **Tests, for the first time.** `app/conftest.py` (supplies the env the app needs at import
+  time) plus four convention tests that enforce rules which otherwise fail silently:
+  Alembic model registration, the layering contract, module anatomy, and router
+  registration order. 12 tests, ~1s, no database.
+- **`scripts/check_docs.py`** — dead relative links, `Last verified against the code:`
+  stamps, `paths:` frontmatter on every rule, and the `CLAUDE.md` line budget.
+- **CI** (`.github/workflows/ci.yml`) and **pre-commit**. CI gates on tests and docs; lint
+  and types are reported non-blocking until the inherited baseline is triaged. `pre-commit` is a
+  dev dependency — run `uv run pre-commit install` once per clone.
+- `docs/MODULE_CONVENTIONS.md` (where code goes), `docs/WRITING_DOCS.md` (the
+  doc-ownership contract), `docs/DECISIONS.md` (append-only), `docs/README.md` (the map),
+  and `docs/guides/`.
+- `app/activity/exceptions.py`, `app/release_notes/exceptions.py`, and module notes at
+  `app/activity/activity_doc/` and `app/release_notes/release_notes_doc/`.
+- A single pytest marker, `integration`, with `addopts = "--strict-markers -m 'not integration'"`.
+
+### Changed
+- **`app/apis/v1.py`: `rbac_router` now registers before `admin_router`.** Both live under
+  `/users`, and FastAPI matches in registration order — with `admin_router` first, adding a
+  `GET /users/{user_id}/roles` would have silently made `GET /users/meta/roles`
+  unreachable. Verified against FastAPI 0.141.1 and covered by
+  `app/apis/tests/test_route_registration.py`.
+- **Services no longer raise raw `HTTPException`.** Nine call sites across
+  `app/iam/user/services.py`, `app/iam/permission/services.py` and
+  `app/release_notes/service.py` now raise named exceptions. New:
+  `PhoneAlreadyInUseError`, `CannotDeleteSelfError`, `UserNotDeletedError`,
+  `RoleNotFoundError`, `ProtectedRoleError`, `ReleaseNoteNotFoundError`,
+  `ReleaseNoteVersionExistsError`. **Status codes and response bodies are unchanged.**
+- `docs/PROJECT_CONVENTIONS.md` is backend-only; the Next.js sections moved to
+  `docs/FRONTEND_CONVENTIONS.md`. Section numbers §1–§21 are unchanged — §16 is kept as a
+  pointer so nothing downstream that cites a section number breaks.
+- `docs/MODERNIZATION.md` → `docs/planning/modernization.md`;
+  `docs/research_and_development/ai/AI_AGENT_INTEGRATION_DISCUSSION.md` →
+  `docs/research/ai-agent-integration.md`.
+- `README.md` trimmed from 365 to 250 lines — the duplicated conventions section was
+  already drifting from `PROJECT_CONVENTIONS.md` and is now a table of links.
+
+### Removed
+- `fcube.py` — a stub that could only ever print "FCube CLI not found". Superseded by the
+  `/new-module` skill. See `docs/DECISIONS.md`.
+- `.agents/skills/` — an empty directory that was never populated.
+
+### Upgrade
+No API changes and no migration. For an existing project built on this template:
+copy `CLAUDE.md`, `.claude/`, `scripts/check_docs.py` and `app/core/tests/`, then run
+`uv run pytest` — the four convention tests will tell you where your project has drifted.
+
 ## [0.1.0] — 2026-03-05
 
 ### 🎉 Initial Template Release
@@ -156,6 +420,67 @@ Defect fixes and the Tier 3 capability work. Detail in `docs/MODERNIZATION.md`.
 - Adopting `ListParams` silently changed the activity endpoint's page size from 50 to 100. `ActivityListParams` re-declares `limit` to keep 50, and §10 now warns about this when subclassing
 - `scope="function"` on `SessionDep` was **not** adopted — flipping a global default on reasoning alone is what should be measured first. The semantics are documented in §5 and `get_session()` so the option stays discoverable
 - OAuth-only accounts still return `PasswordLoginUnavailableError`, distinguishing them by message even though timing is now equal. That message is a deliberate UX affordance, so changing it is a product decision
+
+---
+
+## [2.0.0] — 2026-09-09
+
+The `user` module becomes `iam`. Breaking for every project built on the template:
+import paths change, and the bypass role is renamed. No schema migration —
+see Notes.
+
+### Changed
+
+- **`app/user/` → `app/iam/`** — "IAM" (identity and access management) names what
+  the module actually does. It holds authentication, user accounts *and* RBAC;
+  `user` named only one of the three. Adopted from the naming already in use in
+  the most advanced downstream project, so work flows between them without a
+  translation step
+- **`permission_management/` → `permission/`** and **`permissions.py` →
+  `permission_catalog.py`** — the catalogue is a list of constants, not the guards;
+  the old names had this backwards
+- 💥 **`super_admin` role renamed to `developer_admin`.** `SUPER_ADMIN_ROLE` →
+  `DEVELOPER_ADMIN_ROLE`, and it is now defined **once** in `iam/config.py` with
+  `permission/utils.py` and `create_admin.py` deriving from it — previously the
+  same string was hardcoded in all three
+- **Illustrative docstrings corrected** — `app/core/background/*` and
+  `app/core/cache/examples.py` cited `app.user.tasks` / `app/user/services.py`,
+  paths that never existed. They now point at real modules or clearly hypothetical ones
+
+### Added
+
+- **`app/iam/iam_doc/how-it-works.md`** — one-page tour of the module: the tables,
+  the providers, tokens, the role model, and how the seed's three passes work
+- **Migration `3c6589de23bb`** — data-only, renames the seeded role
+
+### Upgrade
+
+1. `from app.user import X` → `from app.iam import X`;
+   `app.user.permission_management` → `app.iam.permission`;
+   `app.user.permissions` → `app.iam.permission_catalog`
+2. **Run `alembic upgrade head` before starting the app.** This is not optional
+   if you have existing data — see Notes
+3. `SUPER_ADMIN_ROLE` → `DEVELOPER_ADMIN_ROLE` in `.env` if you overrode it
+4. Check for **relative** imports of the module — `from ..user.seed import run_seed`
+   in `app/core/main.py` was one, and a search for `app.user` will not find it
+
+### Notes
+
+- **The module rename needs no schema migration.** All nine table names are
+  unchanged (`users`, `roles`, `permissions`, `role_permissions`, `user_roles`,
+  `refresh_tokens`, `oauth_accounts`, `phone_otps`), verified by diffing the
+  SQLAlchemy metadata before and after — 127 lines of table, column, index and
+  constraint definitions, identical
+- **The role rename does need one.** `seed.py` is additive: it creates roles it
+  cannot find and never renames. Without migration `3c6589de23bb`, an upgraded
+  project gets a fresh `developer_admin` row beside the old `super_admin` one
+  while existing admins stay on `super_admin` — silently losing their bypass,
+  with nothing failing loudly. The migration handles all three states: rename in
+  place, merge when both exist, no-op on a fresh database
+- **Symbol names deliberately unchanged** — `SuperUserDep`, `is_super_admin()` and
+  `create_super_admin()` keep their names, matching the downstream module this
+  rename came from. Only the role string and the `*_ROLE` constant changed
+- Route surface is byte-identical: the same 32 paths before and after
 
 ---
 

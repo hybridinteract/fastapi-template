@@ -6,15 +6,15 @@ user and service_provider modules effectively.
 """
 
 import asyncio
-from typing import List, Optional
-from fastapi import Depends
-from app.core.cache import cache, cached, get_cache, cache_invalidate_pattern, Cache
+
+from app.core.cache import CacheDep, cache, cache_invalidate_pattern, cached
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 # ==================== Service Provider Examples ====================
+
 
 class ServiceProviderService:
     """Example service provider service with caching."""
@@ -63,6 +63,7 @@ class ServiceProviderService:
 
 
 # ==================== User Examples ====================
+
 
 class UserService:
     """Example user service with caching patterns."""
@@ -115,9 +116,10 @@ class UserService:
 
 # Example routes showing cache integration with dependency injection
 
+
 async def get_cached_service_provider(
     provider_id: int,
-    cache_client: Cache = Depends(get_cache)
+    cache_client: CacheDep,
 ):
     """FastAPI route with cache dependency injection."""
     # Try cache first
@@ -136,7 +138,7 @@ async def get_cached_service_provider(
 
 async def get_user_dashboard(
     user_id: int,
-    cache_client: Cache = Depends(get_cache)
+    cache_client: CacheDep,
 ):
     """Complex dashboard data with multiple cache operations."""
 
@@ -144,7 +146,7 @@ async def get_user_dashboard(
     cache_keys = [
         f"user_profile:{user_id}",
         f"user_stats:{user_id}",
-        f"user_notifications:{user_id}"
+        f"user_notifications:{user_id}",
     ]
 
     # Get multiple cached values at once
@@ -159,30 +161,30 @@ async def get_user_dashboard(
         # dashboard_data['profile'] = profile
         pass
     else:
-        dashboard_data['profile'] = profile
+        dashboard_data["profile"] = profile
 
     if not stats:
         # stats = await calculate_user_stats(user_id)
         # dashboard_data['stats'] = stats
         pass
     else:
-        dashboard_data['stats'] = stats
+        dashboard_data["stats"] = stats
 
     if not notifications:
         # notifications = await get_user_notifications(user_id)
         # dashboard_data['notifications'] = notifications
         pass
     else:
-        dashboard_data['notifications'] = notifications
+        dashboard_data["notifications"] = notifications
 
     # Cache any newly fetched data
     cache_updates = {}
-    if not profile and 'profile' in dashboard_data:
-        cache_updates[f"user_profile:{user_id}"] = dashboard_data['profile']
-    if not stats and 'stats' in dashboard_data:
-        cache_updates[f"user_stats:{user_id}"] = dashboard_data['stats']
-    if not notifications and 'notifications' in dashboard_data:
-        cache_updates[f"user_notifications:{user_id}"] = dashboard_data['notifications']
+    if not profile and "profile" in dashboard_data:
+        cache_updates[f"user_profile:{user_id}"] = dashboard_data["profile"]
+    if not stats and "stats" in dashboard_data:
+        cache_updates[f"user_stats:{user_id}"] = dashboard_data["stats"]
+    if not notifications and "notifications" in dashboard_data:
+        cache_updates[f"user_notifications:{user_id}"] = dashboard_data["notifications"]
 
     # Bulk set cache data
     if cache_updates:
@@ -193,11 +195,12 @@ async def get_user_dashboard(
 
 # ==================== Advanced Patterns ====================
 
+
 class AdvancedCachePatterns:
     """Advanced caching patterns for complex scenarios."""
 
     @staticmethod
-    async def cache_with_tags(key: str, value: any, ttl: int, tags: List[str]):
+    async def cache_with_tags(key: str, value: any, ttl: int, tags: list[str]):
         """Cache with tags for group invalidation."""
         # Store the main data
         await cache.set(key, value, ttl=ttl)
@@ -263,19 +266,17 @@ class AdvancedCachePatterns:
 
 # ==================== Cache Health and Monitoring ====================
 
+
 async def get_cache_health():
     """Get comprehensive cache health information."""
     try:
         stats = await cache.get_stats()
         return {
             "status": "healthy" if stats.get("connected", False) else "unhealthy",
-            "stats": stats
+            "stats": stats,
         }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
 
 
 async def warm_up_cache():
@@ -285,7 +286,7 @@ async def warm_up_cache():
         # Pre-load frequently accessed data
         # common_users = await get_common_user_data()
         # for user in common_users:
-        #     await cache.set(f"user:{user.id}", user.dict(), ttl=3600)
+        #     await cache.set(f"user:{user.id}", user.model_dump(), ttl=3600)
 
         # Pre-load configuration data
         # settings_data = await get_app_settings()
@@ -301,27 +302,27 @@ async def warm_up_cache():
 """
 To use this cache system in your existing modules:
 
-1. In app/user/services.py:
-   
+1. In app/iam/user/services.py:
+
    from app.core.cache import cached, cache_invalidate_pattern
-   
+
    class UserService:
        @cached(ttl=3600, key_prefix="users")
        async def get_user(self, user_id: int):
            return await self.repository.get_user(user_id)
-       
+
        @cache_invalidate_pattern("users:*")
        async def update_user(self, user_id: int, data: dict):
            return await self.repository.update_user(user_id, data)
 
 2. In app/service_provider/routes.py:
-   
-   from app.core.cache import get_cache
-   
+
+   from app.core.cache import CacheDep
+
    @router.get("/providers/{provider_id}")
    async def get_provider(
        provider_id: int,
-       cache: Cache = Depends(get_cache)
+       cache: CacheDep,
    ):
        provider = await cache.get(f"provider:{provider_id}")
        if not provider:
@@ -329,14 +330,14 @@ To use this cache system in your existing modules:
            await cache.set(f"provider:{provider_id}", provider, ttl=1800)
        return provider
 
-3. For bulk operations in app/user/crud.py:
-   
+3. For bulk operations in app/iam/user/crud.py:
+
    from app.core.cache import cache
-   
+
    async def get_multiple_users(user_ids: List[int]):
        cache_keys = [f"user:{uid}" for uid in user_ids]
        cached_users = await cache.mget(cache_keys)
-       
+
        # Handle cache misses and fetch from DB
        # ... implementation details
 """

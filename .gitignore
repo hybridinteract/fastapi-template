@@ -40,11 +40,12 @@ logs/
 htmlcov/
 .mypy_cache/
 
-# Docker (generated)
-deploy-v2/generated/
-
 # UV
 .python-version
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Claude Code — personal, per-machine settings. The shared config (settings.json,
+# rules/, skills/, hooks/) IS committed: it is project configuration, not preference.
+.claude/settings.local.json

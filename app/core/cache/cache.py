@@ -4,16 +4,18 @@ Simple Redis Cache Implementation.
 A minimalist, easy-to-understand Redis cache with modern FastAPI patterns.
 """
 
-import json
-import asyncio
-from typing import Any, Optional, Union, Callable, List
-from functools import wraps
 import hashlib
-from redis import asyncio as redis
-from redis.exceptions import RedisError, ConnectionError, TimeoutError
+import json
+from collections.abc import Callable
+from functools import wraps
+from typing import Annotated, Any
 
-from app.core.settings import settings
+from fastapi import Depends
+from redis import asyncio as redis
+from redis.exceptions import ConnectionError, TimeoutError
+
 from app.core.logging import get_logger
+from app.core.settings import settings
 
 logger = get_logger(__name__)
 
@@ -27,7 +29,7 @@ class Cache:
 
     def __init__(self):
         """Initialize cache instance."""
-        self._redis: Optional[redis.Redis] = None
+        self._redis: redis.Redis | None = None
         self._connected = False
 
     async def _get_redis(self) -> redis.Redis:
@@ -40,7 +42,7 @@ class Cache:
                 socket_connect_timeout=5,
                 max_connections=settings.REDIS_MAX_CONNECTIONS,
                 retry_on_timeout=True,
-                health_check_interval=30  # Health check every 30 seconds
+                health_check_interval=30,  # Health check every 30 seconds
             )
         return self._redis
 
@@ -69,12 +71,7 @@ class Cache:
             self._connected = False
             logger.info("✓ Redis cache disconnected")
 
-    async def set(
-        self,
-        key: str,
-        value: Any,
-        ttl: Optional[int] = None
-    ) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """
         Set a value in cache.
 
@@ -110,7 +107,7 @@ class Cache:
             logger.error(f"Cache SET failed for key '{key}': {e}")
             return False
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """
         Get a value from cache.
 
@@ -215,8 +212,7 @@ class Cache:
             return 0
 
         except Exception as e:
-            logger.error(
-                f"Cache CLEAR_PATTERN failed for pattern '{pattern}': {e}")
+            logger.error(f"Cache CLEAR_PATTERN failed for pattern '{pattern}': {e}")
             return 0
 
     async def ping(self) -> bool:
@@ -233,7 +229,7 @@ class Cache:
         except Exception:
             return False
 
-    async def mget(self, keys: List[str]) -> List[Optional[Any]]:
+    async def mget(self, keys: list[str]) -> list[Any | None]:
         """
         Get multiple values from cache.
 
@@ -259,8 +255,7 @@ class Cache:
                 try:
                     results.append(json.loads(value))
                 except json.JSONDecodeError:
-                    logger.error(
-                        f"Cache MGET failed: Invalid JSON for key '{keys[i]}'")
+                    logger.error(f"Cache MGET failed: Invalid JSON for key '{keys[i]}'")
                     results.append(None)
 
             return results
@@ -269,7 +264,7 @@ class Cache:
             logger.error(f"Cache MGET failed for keys {keys}: {e}")
             return [None] * len(keys)
 
-    async def mset(self, mapping: dict, ttl: Optional[int] = None) -> bool:
+    async def mset(self, mapping: dict, ttl: int | None = None) -> bool:
         """
         Set multiple values in cache.
 
@@ -290,11 +285,9 @@ class Cache:
             serialized_mapping = {}
             for key, value in mapping.items():
                 try:
-                    serialized_mapping[key] = json.dumps(
-                        value, default=str, ensure_ascii=False)
+                    serialized_mapping[key] = json.dumps(value, default=str, ensure_ascii=False)
                 except Exception as e:
-                    logger.error(
-                        f"Cache MSET serialization failed for key '{key}': {e}")
+                    logger.error(f"Cache MSET serialization failed for key '{key}': {e}")
                     continue
 
             if not serialized_mapping:
@@ -310,8 +303,7 @@ class Cache:
                     pipe.expire(key, ttl)
                 await pipe.execute()
 
-            logger.debug(
-                f"Cache MSET: {len(serialized_mapping)} keys (TTL: {ttl}s)")
+            logger.debug(f"Cache MSET: {len(serialized_mapping)} keys (TTL: {ttl}s)")
             return True
 
         except Exception as e:
@@ -341,10 +333,11 @@ class Cache:
                 "keyspace_hits": info.get("keyspace_hits", 0),
                 "keyspace_misses": info.get("keyspace_misses", 0),
                 "hit_ratio": round(
-                    info.get("keyspace_hits", 0) /
-                    max(info.get("keyspace_hits", 0) +
-                        info.get("keyspace_misses", 0), 1) * 100, 2
-                )
+                    info.get("keyspace_hits", 0)
+                    / max(info.get("keyspace_hits", 0) + info.get("keyspace_misses", 0), 1)
+                    * 100,
+                    2,
+                ),
             }
 
         except Exception as e:
@@ -359,16 +352,19 @@ cache = Cache()
 # FastAPI dependency
 async def get_cache() -> Cache:
     """
-    FastAPI dependency for cache injection.
+    FastAPI dependency for cache injection. Inject it through ``CacheDep``.
 
     Usage:
         @app.get("/users/{user_id}")
-        async def get_user(user_id: int, cache: Cache = Depends(get_cache)):
+        async def get_user(user_id: int, cache: CacheDep):
             return await cache.get(f"user:{user_id}")
     """
     if not cache._connected:
         await cache.connect()
     return cache
+
+
+CacheDep = Annotated[Cache, Depends(get_cache)]
 
 
 def cache_key(*args, namespace: str = "", separator: str = ":", **kwargs) -> str:
@@ -391,10 +387,9 @@ def cache_key(*args, namespace: str = "", separator: str = ":", **kwargs) -> str
 
     # Add positional arguments
     for arg in args:
-        if hasattr(arg, 'id'):  # Database models with ID
-            parts.append(
-                f"{arg.__class__.__name__.lower()}{separator}{arg.id}")
-        elif hasattr(arg, '__dict__'):  # Skip class instances for methods
+        if hasattr(arg, "id"):  # Database models with ID
+            parts.append(f"{arg.__class__.__name__.lower()}{separator}{arg.id}")
+        elif hasattr(arg, "__dict__"):  # Skip class instances for methods
             continue
         else:
             parts.append(str(arg))
@@ -414,7 +409,7 @@ def cache_key(*args, namespace: str = "", separator: str = ":", **kwargs) -> str
     return key
 
 
-def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] = None):
+def cached(ttl: int = 3600, key_prefix: str = "", key_func: Callable | None = None):
     """
     Decorator to cache function results.
 
@@ -433,6 +428,7 @@ def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] =
         async def get_user_profile(user_id: int, include_settings: bool = False):
             return await fetch_user_profile(user_id, include_settings)
     """
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -444,13 +440,11 @@ def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] =
 
                 # Skip 'self' for class methods
                 cache_args = args
-                if args and hasattr(args[0], '__dict__'):
+                if args and hasattr(args[0], "__dict__"):
                     cache_args = args[1:]
 
-                key_parts = [key_prefix,
-                             func_name] if key_prefix else [func_name]
-                key = cache_key(
-                    *cache_args, namespace=":".join(filter(None, key_parts)), **kwargs)
+                key_parts = [key_prefix, func_name] if key_prefix else [func_name]
+                key = cache_key(*cache_args, namespace=":".join(filter(None, key_parts)), **kwargs)
 
             try:
                 # Try to get from cache
@@ -469,8 +463,7 @@ def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] =
                 return result
 
             except Exception as e:
-                logger.error(
-                    f"Cache decorator operation failed for {key}: {e}")
+                logger.error(f"Cache decorator operation failed for {key}: {e}")
                 # Fall back to executing function without cache
                 return await func(*args, **kwargs)
 
@@ -482,12 +475,10 @@ def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] =
             else:
                 func_name = f"{func.__module__}.{func.__qualname__}"
                 cache_args = args
-                if args and hasattr(args[0], '__dict__'):
+                if args and hasattr(args[0], "__dict__"):
                     cache_args = args[1:]
-                key_parts = [key_prefix,
-                             func_name] if key_prefix else [func_name]
-                key = cache_key(
-                    *cache_args, namespace=":".join(filter(None, key_parts)), **kwargs)
+                key_parts = [key_prefix, func_name] if key_prefix else [func_name]
+                key = cache_key(*cache_args, namespace=":".join(filter(None, key_parts)), **kwargs)
 
             return await cache.delete(key)
 
@@ -497,6 +488,7 @@ def cached(ttl: int = 3600, key_prefix: str = "", key_func: Optional[Callable] =
         wrapper._cache_prefix = key_prefix
 
         return wrapper
+
     return decorator
 
 
@@ -513,6 +505,7 @@ def cache_invalidate_pattern(pattern: str):
             # Update user in database
             return updated_user
     """
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -524,14 +517,15 @@ def cache_invalidate_pattern(pattern: str):
                 deleted_count = await cache.clear_pattern(pattern)
                 if deleted_count > 0:
                     logger.info(
-                        f"Cache invalidated {deleted_count} keys matching pattern: {pattern}")
+                        f"Cache invalidated {deleted_count} keys matching pattern: {pattern}"
+                    )
 
                 return result
             except Exception as e:
                 # Don't invalidate cache if function failed
-                logger.error(
-                    f"Function {func.__name__} failed, cache not invalidated: {e}")
+                logger.error(f"Function {func.__name__} failed, cache not invalidated: {e}")
                 raise
 
         return wrapper
+
     return decorator

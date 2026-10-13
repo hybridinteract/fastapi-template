@@ -1,363 +1,176 @@
 # FastAPI Backend Template
 
-A production-ready, reusable FastAPI backend template with:
+**A template, not an application.** Nobody deploys this repository. You start a project from it,
+rename it, delete what you do not need, and build your product on top. Everything you get — auth,
+RBAC, background jobs, migrations, the conventions and the docs — then belongs to your project.
 
-- ⚡ **FastAPI** + **SQLAlchemy 2.0** async ORM
-- 🔐 **JWT auth** with refresh tokens and **RBAC** (Role-Based Access Control)
-- 🗄️ **PostgreSQL** (asyncpg) + **Redis** (caching + Celery broker)
-- ⚙️ **Celery** background tasks with **Flower** monitoring
-- 📦 **Object storage** abstraction (DigitalOcean Spaces / S3-compatible)
-- 🔄 **Alembic** async migrations
-- 📊 **Prometheus** metrics via `/metrics`
-- 🪵 Rotating file + colored console **logging**
-- 🐳 **Docker Compose** ready (multi-stage Dockerfile)
-- 📓 **Activity log** (append-only audit trail)
-- 🗒️ **Release notes** (What's New system)
+This README is the only file that talks about the template. Every other doc is written about
+*the app*, so it stays correct after you copy it
+([`docs/WRITING_DOCS.md`](docs/WRITING_DOCS.md) → Voice). Replace this README with your project's
+own once you have started.
 
 ---
 
-## 🚀 Quick Start
+## What you start with
 
-### 1. Setup Environment
+- **FastAPI** + **async SQLAlchemy 2.0** (`Mapped` / `mapped_column`) + **Alembic** + **Pydantic v2**
+- **PostgreSQL** (asyncpg) and **Redis** (cache + Celery broker)
+- **Auth** — JWT access + rotating refresh tokens; email/password, Google OAuth and phone OTP providers
+- **RBAC** — permissions in code (`app/iam/permission_catalog.py`), roles as editable bundles
+- **Celery** background tasks, **Flower** monitoring
+- **Object storage** abstraction (S3-compatible — DigitalOcean Spaces, S3)
+- **Prometheus** metrics at `/metrics`, rotating file + console logging
+- **Activity log** (append-only audit trail) and **release notes** ("What's New") — both optional
+- **Docker Compose** for local development; CI with lint, the fast tests, and a migration round-trip
+- **An AI-agent setup** — `CLAUDE.md`, path-scoped rules in `.claude/rules/`, and skills
+
+---
+
+## Philosophy
+
+- **A modular monolith.** One package per business module (`iam/`, `activity/`, `<your feature>/`),
+  never grouped by technical concern. Modules talk to each other only through `dependencies.py`.
+- **Strict layering.** `Route → Service → CRUD → Model`. Routes are thin, the service holds the
+  business rules and owns the transaction (one `commit`), CRUD only flushes.
+- **Conventions are enforced, not suggested.** The rules that fail *silently* when broken — a model
+  autogenerate cannot see, a `commit()` in CRUD, a module missing a required file, a `/{id}` route
+  swallowing its siblings — each have a test that fails instead.
+- **Permissions, not roles.** Every route gates on a permission; a role is a bundle an admin rearranges
+  at runtime.
+- **One owner per rule.** Each rule is written in full in exactly one file; everywhere else links to
+  it. Every doc carries a "Last verified against the code" date, checked by `scripts/check_docs.py`.
+- **Maintained, boring dependencies.** PyJWT and pwdlib, not python-jose and passlib; HTTPX, not
+  requests.
+
+---
+
+## Start a project from this template
+
+### 1. Create your repository
+
+On GitHub, **Use this template → Create a new repository**. Or clone it and keep the template as a
+second remote, so you can pull its fixes later:
+
+```bash
+git clone https://github.com/hybridinteract/fastapi-template my-app
+```
+
+```bash
+git -C my-app remote rename origin template
+```
+
+```bash
+git -C my-app remote add origin <your-repository-url>
+```
+
+### 2. Make it yours
+
+| Where | Change |
+|---|---|
+| `pyproject.toml` | `name`, `description`, and `version` back to `0.1.0` |
+| `.env` (from `.env.example`) | `APP_NAME` — it also names the Docker containers, network and volumes |
+| `README.md` | Replace this file with your project's README |
+| `RELEASE_NOTES.md` | Start empty — the entries here are the template's history, not yours |
+| `docs/DECISIONS.md` | Keep it (these are decisions you inherit) and append one: the template version you started from |
+
+### 3. Delete what you do not use
+
+`app/iam` is the core — keep it. `app/activity` and `app/release_notes` are optional. To remove one:
+drop its router from `app/apis/v1.py` and its models from `app/core/alembic_models_import.py`,
+delete the folder, and generate a migration that drops its tables. Delete the `.claude/rules/` files
+for anything you removed, and record each deletion in `docs/DECISIONS.md`.
+
+### 4. Run it
+
+[`docs/guides/local-environment.md`](docs/guides/local-environment.md) is the full guide. In short:
+tests, lint and doc checks run on the host; alembic and management commands run in the container.
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set:
-#   APP_NAME, POSTGRES_*, SECRET_KEY, JWT_SECRET_KEY
 ```
 
-### 2. Install Dependencies
-
 ```bash
-pip install uv
-uv pip install -r pyproject.toml
+uv sync --all-extras --dev
 ```
 
-### 3. Start Infrastructure (Docker)
-
 ```bash
-docker-compose up -d postgres redis
+docker compose up -d
 ```
 
-### 4. Run Migrations
-
 ```bash
-alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
-### 5. Seed Database (roles + permissions)
-
 ```bash
-python -m app.user.seed
+docker compose exec api python -m app.iam.create_admin
 ```
 
-> **Note:** Seeding also runs automatically at startup. It is idempotent.
+The API is at <http://localhost:8000/docs>, Flower at <http://localhost:5555>. The seed (roles and
+permissions) runs on every startup.
 
-### 6. Create Super Admin
+### 5. Build your first module
 
-```bash
-python -m app.user.create_admin
-```
+Read [`CLAUDE.md`](CLAUDE.md) — it is short, and it is the guardrail. Then `/new-module` (or
+[`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §6 by hand) to choose the module's shape
+and scaffold it. Deploying: [`docs/guides/deployment.md`](docs/guides/deployment.md).
 
-### 7. Start Application
+### 6. Pull in template fixes later
 
-```bash
-# Development (with hot reload)
-uvicorn app.core.main:app --reload
-
-# With Docker (all services)
-docker-compose up -d
-```
-
-### 8. Access API
-
-| URL | Description |
-|-----|-------------|
-| http://localhost:8000/docs | Swagger UI |
-| http://localhost:8000/redoc | ReDoc |
-| http://localhost:8000/health | Health check |
-| http://localhost:8000/metrics | Prometheus metrics |
-| http://localhost:5555 | Flower (Celery monitoring) |
-
----
-
-## 🐳 Docker
+The template keeps a [`RELEASE_NOTES.md`](https://github.com/hybridinteract/fastapi-template/blob/main/RELEASE_NOTES.md)
+with an **Upgrade** section per release. Read it, then merge or cherry-pick from the `template`
+remote:
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View API logs
-docker-compose logs -f api
-
-# Stop all services
-docker-compose down
-
-# Stop and remove volumes (WARNING: destroys data)
-docker-compose down -v
-```
-
-### Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `api` | 8000 | FastAPI application |
-| `postgres` | 5432 | PostgreSQL database |
-| `redis` | 6379 | Redis (cache + Celery broker) |
-| `celery_worker` | — | Background task worker |
-| `flower` | 5555 | Celery task monitoring UI |
-
----
-
-## ⚡ Celery (Background Tasks)
-
-```bash
-# Start worker locally (without Docker)
-celery -A app.core.background.celery_app:celery_app worker --loglevel=info
-
-# Flower monitoring locally
-celery -A app.core.background.celery_app:celery_app flower --port=5555
+git fetch template
 ```
 
 ---
 
-## 📁 Project Structure
+## Structure
 
 ```
 app/
-├── core/                    # Shared infrastructure (never project-specific)
-│   ├── main.py              # FastAPI app factory + lifespan
-│   ├── settings.py          # Pydantic Settings (env-based config)
-│   ├── database.py          # Async SQLAlchemy engine + session
-│   ├── models.py            # DeclarativeBase for all models
-│   ├── crud.py              # Generic CRUDBase[Model, Create, Update]
-│   ├── exceptions.py        # Global exception handlers
-│   ├── middleware.py        # CORS, GZip, TrustedHost, timing
-│   ├── logging.py           # Rotating + colored console logging
-│   ├── metrics.py           # Prometheus instrumentator
-│   ├── utils.py             # utc_now() and shared helpers
-│   ├── alembic_models_import.py  # Single place to register all models
-│   ├── background/          # Celery app + task infrastructure
-│   ├── cache/               # Redis cache abstraction
-│   └── object_storage/      # S3-compatible file storage
-│
-├── apis/
-│   └── v1.py                # Aggregates all module routers
-│
-├── user/                    # Auth + RBAC module
-│   ├── models.py            # User, Role, Permission, RefreshToken
-│   ├── seed.py              # Idempotent role/permission seeder ← edit this
-│   ├── create_admin.py      # Interactive super-admin creation CLI
-│   ├── auth_management/     # JWT login, refresh, logout
-│   ├── permission_management/  # RBAC scoped access helpers
-│   ├── crud/                # CRUD for users, roles, permissions, tokens
-│   ├── schemas/             # Pydantic schemas
-│   ├── services/            # Business logic
-│   └── routes/              # FastAPI routers
-│
-├── activity/                # Append-only audit log module
-├── release_notes/           # "What's New" release notes module
-│
-└── <your_module>/           # Add new feature modules here
-    ├── models/              # SQLAlchemy models
-    ├── schemas/             # Pydantic schemas
-    ├── crud/                # CRUD operations
-    ├── services/            # Business logic
-    ├── routes/              # FastAPI routers
-    ├── dependencies.py      # FastAPI Depends() helpers
-    ├── exceptions.py        # Module-specific exceptions
-    ├── enums.py             # Module enums
-    └── permissions.py       # Permission constants
-
-migrations/                  # Alembic migration files
-docker/                      # Dockerfile + entrypoint scripts
+├── core/          # Infrastructure with zero domain knowledge — settings, database, CRUDBase,
+│                  #   exception handlers, middleware, logging, cache, background, object storage
+├── apis/v1.py     # Registers every module's router (literal prefixes before /{id} ones)
+├── iam/           # Identity & access: auth/, user/, permission/ — the reference module
+├── activity/      # Append-only audit log (optional)
+├── release_notes/ # "What's New" (optional)
+└── <module>/      # Your modules — shape and files: CLAUDE.md §1
+migrations/        # Alembic revisions
+docker/            # Dockerfile and entrypoints
+docs/              # Conventions, guides, plans, research, decisions
+.claude/           # Agent rules, skills and hooks
 ```
 
----
+## Where the conventions live
 
-## 🏛️ Engineering Conventions
+| Read | For |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | The guardrail — the rules that matter most, one line each. **Start here** |
+| [`docs/PROJECT_CONVENTIONS.md`](docs/PROJECT_CONVENTIONS.md) | **How** code is built |
+| [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) | **Where** code goes — read before creating a module |
+| [`.claude/rules/`](.claude/rules/) | One cross-cutting rule per file; an agent loads each when it opens a file the rule governs |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | **Why** things are the way they are |
+| [`docs/README.md`](docs/README.md) | The map of everything else |
 
-> Full standards: [engineering.hybridinteractive.in/standards/project-structure](https://engineering.hybridinteractive.in/standards/project-structure/)
+Org-wide standards:
+[engineering.hybridinteractive.in/standards/project-structure](https://engineering.hybridinteractive.in/standards/project-structure/)
 
-This project follows the **Hybrid Interactive Engineering Standards** — a Modular Monolith architecture based on Domain-Driven Design (DDD). Files are grouped by **feature/domain** (e.g., `user/`, `product/`), not by technical concern (not all models in one folder, all routes in another).
+## Checks
 
----
-
-### 1. Architectural Philosophy
-
-| Principle | What It Means Here |
-|-----------|-------------------|
-| **Separation of Concerns** | HTTP routing, business logic, and database access are strictly decoupled into independent layers |
-| **Dependency Injection** | Use FastAPI `Depends()` to pass sessions, user context, and config — never import them directly in routes |
-| **Async First** | All I/O operations (DB, HTTP, file) must use `async/await` |
-| **Strict Typing** | All inputs/outputs use Pydantic schemas with explicit validation — no raw `dict` returns |
-
----
-
-### 2. Feature Module Structure
-
-Every domain feature lives in its own vertical slice:
-
-```
-app/<feature_name>/
-├── __init__.py          # Module public API — exports only what consumers need
-├── models/              # ORM entity classes defining database tables
-├── schemas/             # Pydantic models for request validation & response shaping
-├── crud/                # Repository layer — exclusively DB interactions
-├── services/            # Business logic — orchestrates crud, cache, external calls
-├── routes/              # FastAPI routers — HTTP interface only
-├── dependencies.py      # Feature-specific FastAPI Depends() providers
-├── enums.py             # Feature-level enums and constants
-├── exceptions.py        # Domain-specific error classes
-├── tasks.py             # Celery background tasks (if applicable)
-└── tests/               # Unit and integration tests for this feature
+```bash
+uv run pytest
 ```
 
----
-
-### 3. Layer Responsibilities & Strict Rules
-
-#### A. Route Layer (`routes/`)
-- **Purpose:** Parse HTTP inputs → call service → return HTTP response
-- ❌ **NO business logic** — no loops, conditionals, or rule validations
-- ❌ **NO direct DB queries** — never import or call `session.execute()` directly
-- ✅ Rely entirely on `Depends()` for services and DB session
-- ✅ Catch domain exceptions raised by services and map them to HTTP status codes
-
-```python
-# ✅ Correct route
-@router.post("/leads", response_model=LeadResponse)
-async def create_lead(
-    data: LeadCreate,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission("leads:create")),
-):
-    return await lead_service.create(session, data, created_by=current_user)
+```bash
+python3 scripts/check_docs.py
 ```
 
-#### B. Service Layer (`services/`)
-- **Purpose:** Execute business rules, coordinate between crud/cache/external systems
-- ✅ **Owns transaction boundaries** — only services call `session.commit()` or `session.rollback()`
-- ❌ Must be completely agnostic to HTTP — no `Request` or `Response` objects here
-- ✅ Interacts with the DB exclusively through the module's `crud/` instances
-
-```python
-# ✅ Correct service — owns commit
-async def create(self, session: AsyncSession, data: LeadCreate, created_by: User) -> Lead:
-    lead = await lead_crud.create(session, obj_in=data)
-    await session.commit()   # ← service owns this, always
-    return lead
+```bash
+uv run ruff check app
 ```
 
-#### C. Data Access Layer (`crud/`)
-- **Purpose:** Encapsulate SQL queries behind clean Python interfaces
-- ✅ Inherit from `app/core/crud.py`'s `CRUDBase` wherever possible
-- ❌ **NEVER call `session.commit()`** — only `session.add()` and `session.flush()`
-- ✅ Methods are purely data-centric — no business conditions or rules
-
-```python
-# ✅ Correct CRUD — flush only, no commit
-async def create(self, session: AsyncSession, *, obj_in: LeadCreate) -> Lead:
-    db_obj = Lead(**obj_in.model_dump())
-    session.add(db_obj)
-    await session.flush()       # ← get DB-generated ID, never commit
-    await session.refresh(db_obj)
-    return db_obj
-```
-
-#### D. Schema Layer (`schemas/`)
-- **Purpose:** Define structured request/response validation
-- ✅ **Split by intent**: `LeadCreate`, `LeadUpdate`, `LeadResponse` — separate classes
-- ✅ Enforce validation rules (string lengths, regex, value bounds) at schema level
-- ❌ Never return raw ORM objects from routes — always use a `Response` schema
-
----
-
-### 4. Implementing a New Feature — Execution Order
-
-Follow this exact sequence (from the engineering standard):
-
-```
-1. schemas/   → Define request, update, and response Pydantic models
-2. models/    → Define the SQLAlchemy ORM model and run migration
-3. crud/      → Implement data access methods (extend CRUDBase)
-4. services/  → Write business logic, call crud, commit transactions
-5. routes/    → Expose HTTP endpoints, inject dependencies, use schemas
-6. tests/     → Write tests covering the new behavior
-```
-
----
-
-### 5. Error Handling Rules
-
-- ❌ **Never** raise a raw `HTTPException(status_code=500)` from inside services or CRUD
-- ✅ Define domain exceptions in the module's `exceptions.py`:
-
-```python
-# app/product/exceptions.py
-from fastapi import HTTPException, status
-
-class ProductNotFoundException(HTTPException):
-    def __init__(self, product_id: str):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Product '{product_id}' not found"
-        )
-```
-
-- ✅ Global exception handlers in `app/core/exceptions.py` translate unhandled exceptions to safe HTTP responses
-- ✅ Routes may catch domain exceptions and re-raise or return appropriate responses
-
----
-
-### 6. Adding a New Feature Module — Checklist
-
-```
-□ 1. Create app/<feature>/ with the standard sub-structure
-□ 2. Define schemas first  →  app/<feature>/schemas/
-□ 3. Add ORM model        →  app/<feature>/models/
-□ 4. Register model       →  app/core/alembic_models_import.py
-□ 5. Run migration        →  alembic revision --autogenerate -m "<description>"
-□ 6. Apply migration      →  alembic upgrade head
-□ 7. Implement CRUD       →  app/<feature>/crud/  (extend CRUDBase)
-□ 8. Implement service    →  app/<feature>/services/
-□ 9. Add permissions      →  app/user/seed.py  (PERMISSIONS + ROLE_PERMISSIONS)
-□ 10. Define routes       →  app/<feature>/routes/
-□ 11. Register router     →  app/apis/v1.py
-□ 12. Write tests         →  app/<feature>/tests/
-```
-
-See [docs/PROJECT_CONVENTIONS.md](docs/PROJECT_CONVENTIONS.md) for the full in-depth guide.
-
----
-
-## 📝 Authentication Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/auth/register` | Register user |
-| `POST` | `/api/v1/auth/login` | Login (returns access + refresh tokens) |
-| `POST` | `/api/v1/auth/refresh` | Refresh access token |
-| `POST` | `/api/v1/auth/logout` | Logout (revoke refresh token) |
-| `GET`  | `/api/v1/auth/me` | Get current user |
-| `PUT`  | `/api/v1/auth/me` | Update profile |
-
----
-
-## ⚙️ Configuration Reference
-
-All configuration is via environment variables (`.env` file). Key variables:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `APP_NAME` | No | Application name (default: MyApp) |
-| `POSTGRES_USER` | **Yes** | Database username |
-| `POSTGRES_PASSWORD` | **Yes** | Database password |
-| `POSTGRES_DB` | **Yes** | Database name |
-| `SECRET_KEY` | **Yes** | Min 32 chars — for signing |
-| `JWT_SECRET_KEY` | **Yes** | Min 32 chars — for JWT tokens |
-| `REDIS_HOST` | No | Redis host (default: localhost) |
-| `ENVIRONMENT` | No | development/staging/production |
-
-See `.env.example` for the full list.
+`uv run pytest` is the fast tier (no database), including the convention tests; `uv run pytest -m ""`
+adds the integration tests and needs Postgres. When a convention test fails, fix the code, not the
+test.

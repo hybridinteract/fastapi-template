@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 
 from app.core.database import SessionDep
-from app.user.permission_management import require_permission
+from app.iam.permission import require_permission
 from .dependencies import ActivityServiceDep
 from .schemas import (
     ActivityListParams,

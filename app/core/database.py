@@ -7,17 +7,18 @@ Provides:
 - Database connection verification
 """
 
-from typing import Annotated, AsyncGenerator
+import asyncio
+from collections.abc import AsyncGenerator
+from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-import asyncio
 
+from .logging import get_logger
 from .models import Base
 from .settings import settings
-from .logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,7 +26,7 @@ logger = get_logger(__name__)
 def get_database_url() -> str:
     """
     Build DATABASE_URL from settings.
-    
+
     Returns:
         str: PostgreSQL connection URL with asyncpg driver
     """
@@ -45,11 +46,7 @@ engine: AsyncEngine = create_async_engine(
 )
 
 # Create async session factory
-async_session_factory = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+async_session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -59,12 +56,17 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     Inject it via the ``SessionDep`` alias declared at the bottom of this
     module — never an inline ``Depends()`` default (PROJECT_CONVENTIONS §5).
 
-    Usage:
-        @router.post("/user")
-        async def create_user(data: UserCreate, session: SessionDep):
-            user = await user_crud.create(session, data)
-            await session.commit()
-            return user
+    Usage — the route hands the session to its service, and the service commits
+    (CRUD only flushes; CLAUDE.md §2):
+        @router.post("/users")
+        async def create_user(
+            data: UserCreate, session: SessionDep, service: UserServiceDep
+        ) -> UserResponse:
+            return await service.create_user(session, data)
+
+    This dependency never commits. On an unexpected error it rolls back; a named
+    ``HTTPException`` passes through, and closing the session discards anything
+    left uncommitted.
 
     Exit scope: this dependency uses the default ``scope="request"``, so the
     session stays open until after the response is sent — which is what lets

@@ -1,7 +1,7 @@
 """user init models
 
 Revision ID: 8600ba4ec5f7
-Revises: 
+Revises:
 Create Date: 2026-02-09 06:57:58.012794
 
 """
@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -114,6 +115,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_index(op.f('ix_users_department'), table_name='users')
     op.drop_table('users')
+    # op.create_table() emitted CREATE TYPE for the inline sa.Enum, but op.drop_table(name)
+    # has no columns to find it through, so the type would outlive the table and the next
+    # `upgrade` would fail with: type "userstatus" already exists.
+    postgresql.ENUM(name="userstatus").drop(op.get_bind(), checkfirst=True)
     op.drop_table('roles')
     op.drop_index('ix_permissions_resource_action', table_name='permissions')
     op.drop_table('permissions')

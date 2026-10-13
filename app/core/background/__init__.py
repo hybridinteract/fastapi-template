@@ -11,7 +11,7 @@ A comprehensive framework for Celery background tasks with:
 Usage:
     from app.core.background import simple_task, TaskContext
 
-    @simple_task(name="app.user.tasks.send_email", retry_policy="high_priority")
+    @simple_task(name="app.notifications.tasks.send_email", retry_policy="high_priority")
     def send_email(ctx: TaskContext, email: str):
         ctx.log_info(f"Sending email to {email}")
         # ... send email ...

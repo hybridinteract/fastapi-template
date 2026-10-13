@@ -1,7 +1,13 @@
 # Project Conventions
 
-> Authoritative guide for building and scaling modules in this FastAPI + Next.js stack.
-> Applies to AI coding assistants and human developers equally — these are hard constraints.
+> **How** backend code is built in this stack. Hard constraints, for humans and agents equally.
+> Where code *goes* is [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md); the API contract a
+> frontend relies on is [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md); the always-loaded summary is
+> [`../CLAUDE.md`](../CLAUDE.md).
+>
+> `CLAUDE.md` and `.claude/rules/` link here **by section number** — add sections at the end rather
+> than renumbering.
+> Last verified against the code: 13 October 2026.
 
 ---
 
@@ -9,10 +15,11 @@
 
 | Resource | URL | Purpose |
 |----------|-----|---------|
-| Backend Template | https://github.com/hybridinteract/fastapi-template | Production-ready starter — clone this, never rebuild from scratch |
+| Upstream template | https://github.com/hybridinteract/fastapi-template | Where this codebase's structure and conventions come from; check its release notes for fixes to pull in |
 | Project Structure Standards | https://engineering.hybridinteractive.in/standards/project-structure/ | Canonical modular monolith + DDD guide |
 | Official FastAPI Skill | https://github.com/fastapi/fastapi/blob/master/fastapi/.agents/skills/fastapi/SKILL.md | Upstream FastAPI conventions these rules are checked against — see §21 |
-| Modernization Tracker | `docs/MODERNIZATION.md` | What has been aligned with the skill, and what is still pending |
+| Modernization Tracker | [`planning/modernization.md`](planning/modernization.md) | What has been aligned with the skill, and what is still pending |
+| Documentation Map | [`README.md`](README.md) | Which document owns what, and when to read it |
 
 ---
 
@@ -47,14 +54,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 > produces the wrong query.
 
 ### Frontend
-| Concern | Technology |
-|---------|-----------|
-| Framework | Next.js (App Router) |
-| Server State | React Query (TanStack Query) |
-| Client State | Zustand (UI-only state) |
-| Styling | Tailwind CSS |
-| Forms | React Hook Form + Zod |
-| Testing | Vitest + Playwright |
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -76,7 +76,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 │   │   ├── middleware.py            # CORS, GZip, TrustedHost, timing
 │   │   ├── logging.py               # Logger factory
 │   │   ├── metrics.py               # Prometheus
-│   │   ├── utils.py                 # utc_now(), shared helpers
+│   │   ├── utils.py                 # utc_now(), escape_like() for ILIKE input
 │   │   ├── alembic_models_import.py # Single file to register ALL models for Alembic
 │   │   ├── background/              # Celery app + task infrastructure
 │   │   ├── cache/                   # Redis abstraction
@@ -85,29 +85,39 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 │   ├── apis/
 │   │   └── v1.py                    # Aggregates all module routers
 │   │
-│   ├── user/                        # Auth + RBAC (included in template)
-│   │   ├── models.py                # User, Role, Permission, RefreshToken
+│   ├── iam/                         # Identity & access: auth + users + RBAC
+│   │   ├── config.py                # AuthConfig — JWT, providers, role names
+│   │   ├── permission_catalog.py    # Roles + permission constants
 │   │   ├── seed.py                  # Idempotent role/permission seeder
-│   │   ├── auth_management/         # Login, refresh, logout
-│   │   ├── permission_management/   # RBAC + scoped access
-│   │   ├── crud/, schemas/, services/, routes/
-│   │   └── create_admin.py          # Super-admin CLI
+│   │   ├── create_admin.py          # Developer-admin CLI
+│   │   ├── README.md                # Module documentation
+│   │   ├── auth/                    # Login, refresh, logout, tokens, providers
+│   │   ├── user/                    # User accounts + admin management
+│   │   └── permission/              # Roles, permissions, RBAC guards
 │   │
-│   ├── activity/                    # Append-only audit log (included in template)
-│   ├── release_notes/               # What's New system (included in template)
+│   ├── activity/                    # Append-only audit log
+│   ├── release_notes/               # What's New system
 │   │
-│   └── <feature>/                   # Project-specific domain modules
+│   └── <feature>/                   # Project-specific domain modules — LAYERS ARE FOLDERS (§4)
 │       ├── __init__.py              # Public API exports only
-│       ├── dependencies.py          # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module)
-│       ├── models.py                # SQLAlchemy ORM (or models/ subpackage)
-│       ├── schemas.py               # Pydantic models (or schemas/ subpackage)
-│       ├── crud.py                  # Repository (or crud/ subpackage)
-│       ├── services.py              # Business logic (or services/ subpackage)
-│       ├── routes.py                # HTTP endpoints (or routes/ subpackage)
-│       ├── exceptions.py            # Domain-specific errors
-│       ├── enums.py                 # Domain enums
-│       ├── permissions.py           # Permission constants
-│       └── tasks.py                 # Celery tasks
+│       ├── dependencies.py          # ⚠️ REQUIRED — DI wiring (CRUD→Service, cross-module). Flat
+│       ├── models/                  # SQLAlchemy ORM — one sibling per entity
+│       ├── schemas/                 # Pydantic models — one sibling per entity
+│       ├── crud/                    # Repository — one sibling per entity
+│       ├── services/                # Business logic — one sibling per cohesive job
+│       ├── routes/                  # HTTP endpoints — one sibling + router per concern
+│       ├── exceptions.py            # Domain-specific errors — stays flat
+│       ├── enums.py                 # Domain enums — stays flat
+│       ├── list_params.py           # XListParams(ListParams) — stays flat (§10)
+│       ├── permissions.py           # Permission constants — stays flat
+│       ├── tasks.py                 # Celery tasks — stays flat
+│       ├── README.md                # The module's doc; docs/ beside it if it needs more
+│       └── tests/                   # Every test the module owns — a package
+│
+│   # The shape above is the DEFAULT for a domain module. A module that is genuinely
+│   # one small thing keeps flat .py files (app/activity, app/release_notes), and a
+│   # module with sub-domains nests them (app/iam = auth/ + user/ + permission/).
+│   # Which shape, and why: MODULE_CONVENTIONS.md §6.
 │
 ├── migrations/
 │   ├── env.py
@@ -129,36 +139,7 @@ Run the toolchain with `uv run ruff check app`, `uv run ruff format app`, `uv ru
 ```
 
 ### Frontend
-```
-src/
-├── app/                             # Next.js App Router
-│   ├── (auth)/                      # Unauthenticated pages
-│   ├── (dashboard)/
-│   │   └── <role>/                  # One folder per user role
-│   │       ├── config.ts            # Nav items, route constants — NO JSX, no hooks
-│   │       ├── layout.tsx
-│   │       └── <feature>/page.tsx
-│   ├── api/                         # Route handlers (BFF layer)
-│   └── globals.css                  # Design tokens — single source of truth
-│
-├── components/
-│   ├── layout/                      # Shell (sidebar, topnav)
-│   ├── providers/                   # Context wrappers — no visual output
-│   ├── shared/                      # Reusable feature components
-│   └── ui/                          # Primitives (Button, Badge, Input)
-│
-├── lib/                             # Business logic — DOMAIN-BASED
-│   ├── api-client.ts                # Singleton HTTP client — stateless, no stored tokens
-│   └── <domain>/
-│       ├── types.ts                 # Backend* (snake_case) + Frontend (camelCase) types
-│       ├── transformers.ts          # snake_case ↔ camelCase — the ONLY place backend fields appear
-│       ├── api.ts                   # Service functions → apiClient → transform → return
-│       ├── hooks.ts                 # React Query hooks
-│       ├── store.ts                 # Zustand — ONLY shared UI state (optional)
-│       └── index.ts                 # Barrel exports
-│
-└── middleware.ts                    # Route protection + API auth injection
-```
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -173,25 +154,23 @@ src/
 | Functions/methods | `snake_case` | `get_current_user()`, `create_lead()` |
 | Constants | `UPPER_SNAKE_CASE` | `PERMISSIONS`, `API_V1_PREFIX` |
 | Pydantic schemas | `PascalCase` + intent suffix | `LeadCreate`, `LeadUpdate`, `LeadResponse` |
-| CRUD instances | `<model>_crud` | `user_crud = UserCRUD(User)` |
+| CRUD instances | `<model>_crud` | `user_crud = UserCRUD()` — the class supplies its model |
 | DI factories | `get_<name>_service` | `get_lead_service()` in `dependencies.py` |
-| Router instances | `<module>_router` | `lead_router = APIRouter(...)` |
+| Router instances | `router` in a module with one; `<concern>_router` with several | `router` (aliased `activity_router` in `v1.py`); `auth_router`, `admin_router` |
 | DB tables | `plural_snake_case` | `users`, `refresh_tokens` |
 | Index names | `ix_<table>_<columns>` | `ix_users_status` |
-| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init.py` |
+| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init_models.py` |
 | Permissions | `resource:action[:scope]` | `leads:create`, `leads:view:all` |
 
 ### Frontend
-| Type | Convention | Example |
-|------|-----------|---------|
-| Files | `kebab-case.tsx` or `camelCase.ts` | `lead-table.tsx`, `hooks.ts` |
-| Components | `PascalCase` | `LeadTable`, `UserAvatar` |
-| Hooks | `use` prefix | `useLeads()`, `useCreateLead()` |
-| Backend types | `Backend*` prefix | `BackendLead`, `BackendUser` |
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
 ## 4. Layered Architecture
+
+> Enforced version: [`.claude/rules/layering.md`](../.claude/rules/layering.md),
+> loaded automatically when you edit a service or CRUD file. Checked by `app/core/tests/test_layering.py`.
 
 ```
 Route → Service → CRUD → Model
@@ -199,11 +178,61 @@ Route → Service → CRUD → Model
 
 | Layer | Responsibility | Hard Rules |
 |-------|---------------|------------|
-| **Routes** | Parse HTTP, call service, return response | No business logic. No direct DB queries. Use `Depends()` for everything. |
+| **Routes** | Parse HTTP, call service, return response | No business logic. No direct DB queries. Every dependency is an `Annotated` alias (§5) — never a bare `Depends()` default. |
 | **Services** | Business logic, orchestration | Owns `commit()` / `rollback()`. Never import FastAPI types. |
-| **CRUD** | SQL operations | Never `session.commit()`. Only `add()`, `flush()`, `refresh()`. Extend `CRUDBase`. |
+| **CRUD** | SQL operations | Never `commit()` or `rollback()` — `flush()`, then `refresh()`. Extend `CRUDBase`. |
 | **Schemas** | Request/response shapes | Split by intent: `Create`, `Update`, `Response`. |
 | **Models** | Database tables | Pure data containers. No business logic. |
+
+### Layer packages — the default for a domain module
+
+**A domain module lays each layer out as a folder from its first commit** — `models/`, `schemas/`,
+`crud/`, `services/`, `routes/`. Not once a file gets long: from the start. Which modules do and do
+not, and why: [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md) §6.
+
+```
+app/<feature>/
+├── crud/
+│   ├── __init__.py        # re-exports every CRUD class AND its singleton
+│   ├── <entity>.py        # <Entity>CRUD, <entity>_crud
+│   └── <entity2>.py
+├── services/
+│   ├── __init__.py        # re-exports the service classes
+│   ├── <feature>_service.py       # one sibling per cohesive job
+│   └── <concept>.py               # a helper two of them share, named for the concept
+└── routes/
+    ├── __init__.py        # re-exports each router, prefixes and tags intact. NO aggregator
+    ├── <entity>.py
+    └── <entity2>.py
+```
+
+- **One sibling per entity** for `models`, `schemas`, `crud` and `routes`; **one sibling per cohesive
+  job** for `services`. Never split by line count.
+- **A folder holding one file is fine and is not a smell.** `services/` with a single
+  `<feature>_service.py` is the correct starting shape — the second service has somewhere to go, and
+  adding it is a new file rather than a restructure.
+- **The public import surface is the package, never a submodule.**
+  `from app.<feature>.crud import <entity>_crud` is the only form callers use.
+- **`crud/__init__.py` re-exports every CRUD class *and* its singleton** — the singleton is what
+  `dependencies.py` wires in, and a second instance gives the DI copy and the copy imported by tests
+  different objects.
+- **`models/__init__.py` must re-export every model.** `app/core/alembic_models_import.py` imports
+  the *package*; a model left out is a table autogenerate stops seeing (§8).
+- **`routes/__init__.py` re-exports each router and builds no aggregator.** `app/apis/v1.py`
+  registers them one by one (§11). Splitting `routes.py` moves the literal-before-wildcard hazard out
+  of one file's declaration order and into `v1.py`, where
+  [`app/apis/tests/test_route_registration.py`](../app/apis/tests/test_route_registration.py) keeps
+  it caught.
+- **Services are still built once** by the factory in `dependencies.py`. Layout does not change DI.
+- **A model relationship naming a class in another sibling is a string**, and a string is invisible
+  to static analysis. Import the target under `if TYPE_CHECKING:` so a reader and `ruff` can resolve
+  it; SQLAlchemy resolves it through its own registry at runtime, so the circular import never
+  happens.
+- **Each `__init__.py` docstring says what the package holds and why it is split**, and imports
+  nothing heavy.
+
+**These stay flat, always:** `dependencies.py`, `exceptions.py`, `enums.py`, `list_params.py`,
+`tasks.py`, `permissions.py`.
 
 ### Transaction ownership
 
@@ -265,18 +294,22 @@ Never run blocking code inside an `async def` function; it will stall the event 
 async def get_lead(lead_id: UUID, service: LeadServiceDep, session: SessionDep) -> LeadResponse:
     return await service.get_lead(session, lead_id)
 
-# ✅ plain def — blocking / sync-only code, runs in threadpool
-@router.get("/export")
-def export_leads_csv(service: LeadServiceDep, session: SessionDep) -> StreamingResponse:
-    data = service.build_csv_sync(session)
-    ...
+# ✅ plain def — blocking, sync-only work with no database; runs in the threadpool
+@router.post("/preview")
+def render_preview(body: PreviewRequest) -> Response:
+    pdf = render_pdf(body.html)   # a blocking library call
+    return Response(pdf, media_type="application/pdf")
 ```
 
-When you must mix blocking and async code, use **Asyncer** (`asyncify` / `syncify`) instead of raw `asyncio` or `anyio`.
+A plain `def` route **cannot use the `AsyncSession`** — every query needs an `await`. When a route
+needs both, make it `async def`, load the rows through the service, and run the blocking step with
+**Asyncer**: `await asyncify(build_csv)(rows)`. Never raw `asyncio` or `anyio`.
 
 ---
 
 ## 5. Dependency Injection (`dependencies.py`)
+
+> Enforced version: [`.claude/rules/routes-and-di.md`](../.claude/rules/routes-and-di.md).
 
 Every module **must** have a `dependencies.py`. It is the single wiring layer — the only file that knows about cross-module imports.
 
@@ -331,12 +364,12 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ```
 
 ```python
-# app/user/dependencies.py
+# app/iam/auth/current_user.py — re-exported by app.iam.dependencies and app.iam
 from typing import Annotated
 from fastapi import Depends
-from app.user.user.models import User
+from app.iam.user.models import User
 
-CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 ```
 
 ```python
@@ -344,7 +377,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 from typing import Annotated
 from fastapi import Depends
 from app.lead.crud import lead_crud
-from app.user.user.crud import user_crud   # cross-module import lives here
+from app.iam.user.crud import user_crud   # cross-module import lives here
 
 def get_lead_service() -> LeadService:
     return LeadService(lead_crud=lead_crud, user_crud=user_crud)
@@ -485,6 +518,11 @@ class MyModel(Base):
 - Always UUID primary keys
 - Always `DateTime(timezone=True)` — store UTC, let frontend convert for display
 - Default: `utc_now` from `app.core.utils` — never `datetime.utcnow()` (deprecated)
+- **Enums subclass `StrEnum`, never `(str, Enum)`.** On Python 3.11+ `str()` and f-strings render a
+  `(str, Enum)` member as `"Cls.MEMBER"`, not its value — so any code that turns the member into a
+  string silently compares against the wrong thing. `StrEnum` renders the value; equality, Pydantic
+  and `SQLEnum(values_callable=...)` behave identically. The bug it prevented:
+  `app/activity/tests/test_list_filters.py`.
 
 ---
 
@@ -492,7 +530,8 @@ class MyModel(Base):
 
 - `app/core/settings.py` — Pydantic `BaseSettings`, loaded from `.env`
 - Group fields with section comments: `# === Database ===`
-- Required secrets have no default (fail fast): `SECRET_KEY: str = Field(...)`
+- Required secrets have no default (fail fast): `SECRET_KEY: str = Field(description="...")` —
+  no default at all, never the `Field(...)` Ellipsis
 - Computed values use `@property`; cache instance with `@lru_cache()`
 - All env vars documented in `.env.example` with inline comments
 
@@ -500,15 +539,18 @@ class MyModel(Base):
 
 ## 8. Database & Alembic
 
+> Enforced version: [`.claude/rules/models-and-migrations.md`](../.claude/rules/models-and-migrations.md).
+> Checked by `app/core/tests/test_alembic_models_registered.py`.
+
 ### Alembic model registration
 
 `app/core/alembic_models_import.py` is the single source of truth for autogenerate:
 
 ```python
 from app.core.models import Base
-from app.user.user.models import User, UserRole
-from app.user.permission_management.models import Permission, Role, RolePermission
-from app.user.auth.models import RefreshToken, OAuthAccount, PhoneOTP
+from app.iam.user.models import User, UserRole
+from app.iam.permission.models import Permission, Role, RolePermission
+from app.iam.auth.models import RefreshToken, OAuthAccount, PhoneOTP
 from app.activity.models import ActivityLog
 from app.release_notes.models import ReleaseNote
 # from app.mymodule.models import MyModel   ← add here
@@ -527,6 +569,8 @@ file_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(re
 
 ## 9. Authentication & RBAC
 
+> Enforced version: [`.claude/rules/permissions.md`](../.claude/rules/permissions.md).
+
 ### Permission naming
 
 ```python
@@ -538,13 +582,18 @@ PERMISSIONS = [
 # Stored as: "leads:view", "leads:view:all"
 ```
 
-### Seed script (`app/user/seed.py`)
+### Seed script (`app/iam/seed.py`)
 
-- **Idempotent** — only inserts missing data; safe to re-run
+- **Idempotent** — only inserts missing permissions, roles and grants; never deletes. A grant is
+  seeded only when its role or its permission is new to the database, so a revoked grant stays
+  revoked — rule 3 in [`permissions.md`](../.claude/rules/permissions.md)
 - Runs automatically on startup via `lifespan` in `main.py`
-- `super_admin` bypasses all permission checks
-- `is_system=True` roles cannot be deleted via UI
-- All project-specific roles/permissions defined here — nowhere else
+- **It defines nothing itself.** Roles and permissions live in `app/iam/permission_catalog.py`; project-specific
+  ones can also come from `extra_roles()` / `extra_permissions()` in
+  `app/iam/extensions.py`
+- `developer_admin` bypasses all permission checks, and is never granted through the API
+- `is_system=True` marks a platform role. No route deletes roles today, so the flag guards nothing
+  yet — a role-delete route must refuse it
 
 ### Route permission guard
 
@@ -578,6 +627,8 @@ async def create_lead(
 
 ## 10. List Endpoints (Filtering, Sorting, Pagination)
 
+> Enforced version: [`.claude/rules/routes-and-di.md`](../.claude/rules/routes-and-di.md).
+
 > **Reference implementation: `app/activity/`.** Read those four files together —
 > `schemas.py` (`ActivityListParams`), `crud.py` (`get_list_filtered`), `service.py`
 > (`list_logs`), `routes.py` (`list_activity_logs`) — for a complete worked example.
@@ -604,10 +655,16 @@ Route (params: Annotated[XxxListParams, Query()])
 
 | File | What to add |
 |------|-------------|
-| `schemas.py` | `XxxListParams(ListParams)` — narrow `sort_by` to a `Literal[...]` + add filters |
-| `crud.py` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
-| `services.py` | `list_xxx(session, params, …)` — pass-through |
-| `routes.py` | `params: Annotated[XxxListParams, Query()]` |
+| `list_params.py` | `XxxListParams(ListParams)` — narrow `sort_by` to a `Literal[...]` + add filters |
+| `crud` | `get_list_filtered(…)` — builds filters, calls `paginated_select()` or `apply_sorting()` |
+| `services` | `list_xxx(session, params, …)` — pass-through |
+| `routes` | `params: Annotated[XxxListParams, Query()]` |
+
+> **`list_params.py` is a flat sibling, not part of `schemas/`.** List parameters are a route
+> concern, not an entity, so keeping them out lets `schemas/` stay strictly one sibling per entity
+> when the module is layered (§4). In a flat module it is still its own file, so the two shapes read
+> the same. `app/activity` predates this and still declares `ActivityListParams` in `schemas.py`;
+> new modules use `list_params.py`.
 
 ```python
 class LeadListParams(ListParams):
@@ -615,6 +672,9 @@ class LeadListParams(ListParams):
     search: Optional[str] = None
     status: Optional[str] = None
 ```
+
+**A `search` field needs a technique and an index chosen for it** — the `search-endpoint` skill
+walks the choice. An `ilike('%term%')` with no index is right only for a bounded table.
 
 Narrow `sort_by` with a `Literal[...]` of the columns the resource actually allows sorting
 by — not a `str` and not an `Enum`. OpenAPI renders it as a typed dropdown, and an invalid
@@ -652,6 +712,8 @@ scoped = params.model_copy(update={"owner_id": current_user.id})
 
 ## 11. API Router Registration
 
+> Checked by `app/apis/tests/test_route_registration.py`.
+
 Declare `prefix`, `tags`, and shared `dependencies` on the router itself — not on `include_router()`. This keeps the module self-contained and the aggregation file clean.
 
 ```python
@@ -681,6 +743,8 @@ app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)  # /api/v1
 
 ## 12. Background Tasks (Celery)
 
+> Enforced version: [`.claude/rules/background-tasks.md`](../.claude/rules/background-tasks.md).
+
 - Module tasks: `app/<module>/tasks.py`
 - Infrastructure (config, base task): `app/core/background/`
 - Celery reference path: `app.core.background.celery_app:celery_app`
@@ -692,14 +756,17 @@ app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)  # /api/v1
 
 ```python
 # app/<feature>/exceptions.py
-class LeadNotFoundException(HTTPException):
-    def __init__(self, lead_id: str):
-        super().__init__(status_code=404, detail=f"Lead {lead_id} not found")
+class LeadNotFoundError(HTTPException):
+    def __init__(self, lead_id: str) -> None:
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead not found: {lead_id}")
 ```
 
-- Each module defines domain exceptions in `exceptions.py`
-- Never raise raw `HTTPException(500)` from services
-- `app/core/exceptions.py` handles: 422 (validation), 409 (integrity), 503 (operational), 500 (sqlalchemy), 400 (value), 403 (permission), 500 (catch-all)
+- Each module defines domain exceptions in `exceptions.py`, named `<Thing><Problem>Error`
+- **Services and routes never build a raw `HTTPException(...)`** — only `app/core/exceptions.py` and
+  the auth layer may (`CLAUDE.md` §6). Checked by `app/core/tests/test_layering.py`
+- `app/core/exceptions.py` handles: 422 (request and Pydantic validation), 409 (integrity),
+  503 (operational), 500 (SQLAlchemy), 400 (`ValueError`), 403 (`PermissionError`),
+  404 (`FileNotFoundError`), 408 (`TimeoutError`), 500 (catch-all)
 
 ---
 
@@ -782,63 +849,9 @@ returns a response object, so `-> PNGStreamingResponse` is false and `ty` will f
 
 ## 16. Frontend Patterns
 
-### Data flow
-
-```
-Component → Hook (hooks.ts) → Service (api.ts) → apiClient → Backend
-```
-
-- All requests through `apiClient`. No direct `fetch()` in components.
-- `apiClient` is stateless — never stores tokens. Auth handled by `middleware.ts`.
-- All snake_case → camelCase conversion happens once, in `transformers.ts`.
-- Components never see backend shapes.
-
-### State management
-
-```
-Data from API + interactive?  → React Query
-Data from API, initial load?  → Server Component (RSC)
-Shared UI-only state?         → Zustand
-Local component state?        → useState
-```
-
-Never put API data (`isLoading`, `error`, `items[]`) in Zustand.
-
-### React Query pattern
-
-```typescript
-export const leadKeys = {
-  lists: () => ["leads", "list"] as const,
-  list: (params) => [...leadKeys.lists(), params] as const,
-};
-
-export function useLeads(params) {
-  return useQuery({ queryKey: leadKeys.list(params), queryFn: () => leadApi.list(params), staleTime: 30_000 });
-}
-
-export function useCreateLead() {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: leadApi.create, onSuccess: () => qc.invalidateQueries({ queryKey: leadKeys.lists() }) });
-}
-```
-
-### Error handling
-
-All API errors are `AppError` instances (statusCode, message, detail, data). Map 422 responses to field errors. Use `onError` in mutations, not try/catch in components.
-
-### Styling rules
-
-- All tokens in `globals.css`. Use semantic tokens: `text-primary`, `bg-muted`.
-- Never hex colors or `bg-[#f5f5f5]` in component files.
-
-### File size limits
-
-| Type | Max |
-|------|-----|
-| Page component | ~200 lines |
-| Shared component | ~150 lines |
-| Custom hook | ~80 lines |
-| Zustand store | ~50 lines (if more, you're storing server state) |
+Lives in the frontend repo; the API contract it relies on is [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
+The section number is kept so §17–§21 do not shift — `CLAUDE.md` and `.claude/rules/`
+link here by number.
 
 ---
 
@@ -866,31 +879,21 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 □ Define schemas (Create, Update, Response)
 □ Define ORM model
 □ Register model in app/core/alembic_models_import.py
-□ alembic revision --autogenerate -m "<desc>" && alembic upgrade head
+□ Migration via /new-migration: autogenerate, read it, upgrade → downgrade → upgrade, alembic check
 □ Implement CRUD extending CRUDBase
 □ Implement service (receives CRUD via constructor, owns commit)
 □ Create dependencies.py (wire CRUD → service, declare cross-module deps)
 □ Define domain exceptions in exceptions.py
-□ Add permissions in app/user/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
-□ Define routes (inject service via Depends(get_<name>_service))
+□ Add permissions in app/iam/permission_catalog.py (PLATFORM_PERMISSIONS + PLATFORM_ROLE_PERMISSIONS)
+□ Define routes (inject the service via its XServiceDep alias, gated by require_permission)
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
-□ Write tests
+□ Write app/<feature>/README.md
+□ Write tests in app/<feature>/tests/
 ```
 
 ### Frontend
-
-```
-□ Create lib/<domain>/ folder
-□ types.ts — Backend* (snake_case) + Frontend (camelCase) types
-□ transformers.ts — manual mapping only, no auto-mappers
-□ api.ts — service functions → apiClient → transform → return
-□ hooks.ts — query key factory + useQuery/useMutation
-□ store.ts — ONLY if shared UI state needed (never API data)
-□ index.ts — barrel exports
-□ Page at app/(dashboard)/<role>/<feature>/page.tsx
-□ Add nav item + route constant to role's config.ts
-```
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ---
 
@@ -898,7 +901,7 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 
 ### Backend — never do
 - Business logic in routes
-- `session.commit()` in CRUD layer
+- `commit()` or `rollback()` in the CRUD layer
 - `datetime.utcnow()` — use `utc_now()` from `app.core.utils` (§6)
 - Hardcoded secrets or config values
 - Raw SQL strings — always use SQLAlchemy ORM/Core
@@ -926,18 +929,11 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 - Use `python-jose` or `passlib` — both are unmaintained; use PyJWT and pwdlib (§1)
 
 ### Frontend — never do
-- API data in Zustand (`isLoading`, `error`, `items[]`, `fetchX()`)
-- Direct `fetch()` in components
-- Hex colors in component files — use design tokens
-- Backend `snake_case` fields leaking into components
-- Tokens stored in `apiClient`
-- Deep relative imports (`../../..`) — use `@/` aliases
-- `any` without an explaining comment
-- JSX or hooks in `config.ts`
-- Mixing Server Actions + React Query mutations for the same operation
+Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md).
 
 ### Both — never do
-- Files exceeding 200 lines without extracting sub-modules
+- Split a file because of its line count — split by entity or cohesive job (§4; `DECISIONS.md`,
+  10 September 2026)
 - Generate code without reading existing code first
 - Add unrequested features, refactors, or abstractions
 
@@ -948,13 +944,13 @@ All API errors are `AppError` instances (statusCode, message, detail, data). Map
 | Question | Answer |
 |----------|--------|
 | Applies to every project? | `app/core/` |
-| Authentication / user management? | `app/user/` |
+| Authentication / user management? | `app/iam/` |
 | Audit trail of events? | `app/activity/` |
 | Version change announcements? | `app/release_notes/` |
 | Feature-specific business logic? | `app/<feature>/services/` |
 | DB row definition? | `app/<feature>/models/` |
 | API contract shape? | `app/<feature>/schemas/` |
-| Who can do what? | `app/<feature>/permissions.py` + `user/seed.py` |
+| Who can do what? | `app/iam/permission_catalog.py`, applied by `app/iam/seed.py` |
 | Background task? | `app/<feature>/tasks.py` |
 | FastAPI `Depends()` wiring? | `app/<feature>/dependencies.py` |
 
@@ -967,7 +963,7 @@ Where we knowingly differ, the reason is recorded here — **do not "fix" these 
 
 | Skill says | We do | Why |
 |------------|-------|-----|
-| Prefer **SQLModel** over SQLAlchemy | SQLAlchemy 2.0 (async) | `CRUDBase[Model, Create, Update]` generics, Alembic autogenerate, the RBAC join tables, and `paginated_select()` are all built on SQLAlchemy Core. SQLModel would be a rewrite of the template's foundation for no functional gain, and its `table=True` models blur the schema/model split that §4 depends on. |
+| Prefer **SQLModel** over SQLAlchemy | SQLAlchemy 2.0 (async) | `CRUDBase[Model, Create, Update]` generics, Alembic autogenerate, the RBAC join tables, and `paginated_select()` are all built on SQLAlchemy Core. SQLModel would be a rewrite of the codebase's foundation for no functional gain, and its `table=True` models blur the schema/model split that §4 depends on. |
 | Use `fastapi dev` / `fastapi run` with a `[tool.fastapi]` entrypoint | `uvicorn app.core.main:app` via Docker Compose | Deployment is containerized; the process is supervised by Compose and the entrypoint scripts in `docker/`. The CLI adds a layer we don't use. |
 | Serve built frontends with `app.frontend()` | Frontend deployed separately | The frontend is a Next.js SSR app, not a static build directory. `app.frontend()` only serves built static assets. |
 

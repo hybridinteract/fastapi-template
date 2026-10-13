@@ -6,10 +6,10 @@ Extend with project-specific actions in your feature module's
 own enums.py if needed.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ActivityAction(str, Enum):
+class ActivityAction(StrEnum):
     """Standard actions tracked across the system."""
 
     # ── Core CRUD ──
@@ -21,12 +21,14 @@ class ActivityAction(str, Enum):
     STATUS_CHANGE = "STATUS_CHANGE"
     PUBLISH = "PUBLISH"
     ARCHIVE = "ARCHIVE"
+    RESTORE = "RESTORE"
 
     # ── Assignment ──
     ASSIGN = "ASSIGN"
     UNASSIGN = "UNASSIGN"
 
     # ── Auth ──
+    REGISTER = "REGISTER"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
     PASSWORD_CHANGE = "PASSWORD_CHANGE"

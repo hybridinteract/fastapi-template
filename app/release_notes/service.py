@@ -5,17 +5,20 @@ Orchestrates business operations for release notes, enforces rules, controls tra
 CRUD operations do NOT commit — service calls session.commit().
 """
 
-from typing import List, Optional, Tuple
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.utils import utc_now
+from app.release_notes.exceptions import (
+    ReleaseNoteNotFoundError,
+    ReleaseNoteVersionExistsError,
+)
+
+from .crud import ReleaseNoteCRUD, release_note_crud
 from .models import ReleaseNote
 from .schemas import ReleaseNoteCreate, ReleaseNoteUpdate
-from .crud import ReleaseNoteCRUD, release_note_crud
 
 logger = get_logger(__name__)
 
@@ -36,16 +39,13 @@ class ReleaseNoteService:
         """Get a single release note by ID. Raises 404 if not found."""
         note = await self._crud.get_by_id(session, note_id)
         if not note:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Release note not found",
-            )
+            raise ReleaseNoteNotFoundError()
         return note
 
     async def get_latest_published(
         self,
         session: AsyncSession,
-    ) -> Optional[ReleaseNote]:
+    ) -> ReleaseNote | None:
         """Get the most recently published release note. Returns None if none exist."""
         return await self._crud.get_latest_published(session)
 
@@ -54,7 +54,7 @@ class ReleaseNoteService:
         session: AsyncSession,
         skip: int = 0,
         limit: int = 50,
-    ) -> Tuple[List[ReleaseNote], int]:
+    ) -> tuple[list[ReleaseNote], int]:
         """Get published release notes (for all authenticated users)."""
         return await self._crud.get_published_list(session, skip=skip, limit=limit)
 
@@ -63,7 +63,7 @@ class ReleaseNoteService:
         session: AsyncSession,
         skip: int = 0,
         limit: int = 50,
-    ) -> Tuple[List[ReleaseNote], int]:
+    ) -> tuple[list[ReleaseNote], int]:
         """Get all release notes including drafts (admin only)."""
         return await self._crud.get_all_list(session, skip=skip, limit=limit)
 
@@ -79,13 +79,12 @@ class ReleaseNoteService:
         # Check for duplicate version
         existing = await self._crud.get_by_version(session, data.version)
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Release note with version '{data.version}' already exists",
-            )
+            raise ReleaseNoteVersionExistsError(data.version)
 
         note = await self._crud.create_note(
-            session, obj_in=data, created_by=current_user_id,
+            session,
+            obj_in=data,
+            created_by=current_user_id,
         )
 
         await session.commit()
@@ -109,10 +108,7 @@ class ReleaseNoteService:
         if data.version and data.version != note.version:
             existing = await self._crud.get_by_version(session, data.version)
             if existing:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Release note with version '{data.version}' already exists",
-                )
+                raise ReleaseNoteVersionExistsError(data.version)
 
         updated = await self._crud.update_note(session, db_obj=note, obj_in=data)
         await session.commit()
