@@ -1,7 +1,7 @@
 # Deployment
 
 > How this template gets onto a server.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 The deployment system lives in [`../../deploy-v2/`](../../deploy-v2/) and has its own documentation.
 This page exists so you know it is there and which file to open.
@@ -26,14 +26,18 @@ non-root `appuser` (uid 1000). Healthcheck hits `/health`. The entrypoints are
 
 > The image is Python 3.13 while `pyproject.toml` sets `requires-python = ">=3.11"`. That is
 > deliberate — the floor is what the code needs, the image is what we deploy — but it means a 3.11-only
-> failure will not reproduce locally on 3.13. Tracked in
+> failure will not reproduce locally on 3.13, nor in CI, which also runs 3.13. Tracked in
 > [`../planning/modernization.md`](../planning/modernization.md).
 
 ## Before a first production deploy
 
 - [ ] `SECRET_KEY` and `JWT_SECRET_KEY` generated fresh — never carried over from `.env.example`.
-- [ ] `ENVIRONMENT=production`. Settings refuses to boot with `AUTH_EXPOSE_DEV_CODES=true` here.
-- [ ] `alembic upgrade head` applied, and the migration's `downgrade()` tested somewhere first.
+- [ ] `ENVIRONMENT=production`, which turns on `TrustedHostMiddleware` — and `TRUSTED_HOSTS` set to
+      the real domains. Its default is `["*"]`, which admits any `Host` header.
+- [ ] `alembic upgrade head` applied, and the migration's `downgrade()` tested somewhere first —
+      CI's integration job does both, plus `alembic check`, on every push.
 - [ ] A `celery_worker` beside the API, or every dispatched task is silently dropped.
 - [ ] CORS origins set to the real frontend origin, not `*`.
+- [ ] `AUTH_PHONE_OTP_ENABLED` left `false` until a real SMS provider is implemented — `noop`, the
+      only one, refuses in production rather than write codes to the log.
 - [ ] `python -m app.iam.create_admin` run once, and its credentials stored somewhere real.

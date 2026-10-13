@@ -113,7 +113,7 @@ CREATE INDEX ix_employees_code_trgm  ON employees USING GIN (lower(employee_code
 
 ```python
 # CRUD
-from app.core.utils.text import escape_like
+from app.core.utils import escape_like
 
 term = f"%{escape_like(search.lower())}%"
 filters.append(or_(
@@ -483,7 +483,7 @@ PostgreSQL on every INSERT and UPDATE — no trigger or application logic needed
 ### 7.1 Safe input handling
 
 ```python
-from app.core.utils.text import escape_like
+from app.core.utils import escape_like
 
 # Always escape user input before iLIKE
 term = f"%{escape_like(search)}%"
@@ -626,7 +626,7 @@ When adding a new entity that has a list endpoint with search:
 | Filtering in Python after fetching results | Pagination totals are wrong; full table loaded | Move all predicates into SQLAlchemy `where()` |
 | `to_tsvector(col)` computed inline in query | Recomputed on every row, can't use index | Use stored `GENERATED ALWAYS AS` column |
 | String interpolation into `tsquery` | SQL injection | Use parameterised `func.websearch_to_tsquery('simple', :q)` |
-| Not escaping user input for iLIKE | `%` and `_` widen the match unexpectedly | Use `escape_like()` from `app.core.utils.text` |
+| Not escaping user input for iLIKE | `%` and `_` widen the match unexpectedly | Use `escape_like()` from `app.core.utils` |
 | Composite GIN index on unrelated columns | Large index, partial-key GIN lookups are not useful | GIN on individual columns; composite only for B-tree |
 | Using FTS for short names / codes | Stop-word removal can drop tokens; no fuzzy match | Use trigram for short strings |
 | Using trigram for long documents | High false-positive rate; large index | Use FTS for long-form text |

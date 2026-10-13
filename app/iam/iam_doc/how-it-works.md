@@ -2,7 +2,7 @@
 
 > One-page tour of `app/iam` — signing in, users, roles and permissions.
 >
-> **Last verified against the code: 9 September 2026.**
+> **Last verified against the code: 13 October 2026.**
 
 ## What it is for
 
@@ -80,7 +80,9 @@ bcrypt retained for verifying old ones, and `verify_and_update_password` returns
 an upgraded hash when it meets an older scheme — so hashes migrate forward on login.
 
 `UserStatus` gates access: `active`, `inactive`, `suspended`,
-`pending_verification`. Anything other than `active` cannot log in.
+`pending_verification`. Anything other than `active` cannot log in — checked at sign-in
+(`assert_user_active`), on every request (`get_current_user`) and on token refresh. Until
+13 October 2026 `inactive` slipped through all three.
 
 ## Roles and permissions
 
@@ -91,7 +93,7 @@ with the template:
 | Role | What it is |
 |---|---|
 | `developer_admin` | bypasses every permission check |
-| `admin` | broad administrative access, but still checked |
+| `admin` | granted `users:*` and more in the catalogue — but see below: no admin route checks those yet |
 | `member` | standard authenticated user |
 
 **Gate endpoints on permissions, never on roles.** A role is a bundle an
@@ -107,8 +109,13 @@ if user.role == "admin":                                          # no
 `developer_admin` is the one exception, and it is deliberately not a permission
 check — `BasePermissionChecker` short-circuits on it before looking at anything
 else. The role name is configurable via `DEVELOPER_ADMIN_ROLE`, defined once in
-`config.py` and derived everywhere else. `SuperUserDep` is the dependency alias
-that requires it.
+`config.py` and derived everywhere else. It is **never granted through the API** —
+`assign_roles` refuses it (`RoleNotGrantableError`); `create_admin.py` is the only way in.
+
+`SuperUserDep` admits `is_superuser` **or** `developer_admin`, and today it — not a permission —
+gates all 18 admin routes in `user/`, `permission/` and `app/release_notes`. That is a role check,
+so the catalogue's `users:*` grants control nothing yet. The decision is recorded in
+[`.claude/rules/permissions.md`](../../../.claude/rules/permissions.md) under Known gaps.
 
 ## The seed is additive
 
@@ -118,7 +125,9 @@ that requires it.
 2. permissions contributed by each **enabled** provider
 3. permissions, roles and links contributed by `extensions.py`
 
-Every pass creates only what is missing. It never renames and never deletes, so
+Every pass creates only what is missing — and a catalogue grant an operator revoked *is* missing,
+so the next startup grants it back (Known gaps in `permissions.md`). It never renames and never
+deletes, so
 removing an entry from `permission_catalog.py` leaves the row in the database
 until you drop it by hand — and **renaming** anything seeded needs its own data
 migration, because the seed will simply create the new name alongside the old.

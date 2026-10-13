@@ -1,6 +1,6 @@
 [project]
 name = "fastapi-backend-template"
-version = "2.3.0"
+version = "2.3.1"
 description = "Reusable FastAPI backend template with auth, RBAC, Celery, Redis, and object storage"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -1,7 +1,7 @@
 # Planning
 
 > The spec for a feature **before** it is built.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 One file per feature or module, `kebab-case.md`. Copy [`_TEMPLATE.md`](_TEMPLATE.md) and keep the
 sections in order — the shape is what makes plans comparable and scannable.

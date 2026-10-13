@@ -5,7 +5,6 @@ Services receive CRUD via constructor (wired in ``app.iam.dependencies``).
 """
 
 from datetime import timedelta
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,8 +22,8 @@ from app.iam.auth.tokens import (
 )
 from app.iam.config import auth_config
 from app.iam.enums import UserStatus
-from app.iam.user.models import User
 from app.iam.user.crud import UserCRUD
+from app.iam.user.models import User
 
 logger = get_logger(__name__)
 
@@ -37,7 +36,9 @@ def assert_user_active(user: User) -> None:
     """
     if not user.is_active or user.is_deleted:
         raise InactiveUserError()
-    if user.status in (UserStatus.SUSPENDED, UserStatus.PENDING_VERIFICATION):
+    # Every status but ACTIVE is refused — INACTIVE included. An admin sets it through
+    # PATCH /users/{id}, which leaves `is_active` alone, so it must be checked here too.
+    if user.status != UserStatus.ACTIVE:
         raise InactiveUserError()
 
 
@@ -52,17 +53,15 @@ class TokenService:
         self,
         session: AsyncSession,
         user: User,
-        device_info: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        device_info: str | None = None,
+        ip_address: str | None = None,
     ) -> TokenResponse:
         """Issue a new access + refresh token pair and commit."""
         access_token = create_access_token(str(user.id))
         refresh_raw = generate_refresh_token_raw()
         refresh_hash = hash_token(refresh_raw)
 
-        expires_at = utc_now() + timedelta(
-            days=auth_config.JWT_REFRESH_TOKEN_EXPIRE_DAYS
-        )
+        expires_at = utc_now() + timedelta(days=auth_config.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
         await self.refresh_token_crud.create_token(
             session,
             user_id=user.id,
@@ -80,9 +79,7 @@ class TokenService:
             user_id=user.id,
         )
 
-    async def refresh_token(
-        self, session: AsyncSession, refresh_token: str
-    ) -> TokenResponse:
+    async def refresh_token(self, session: AsyncSession, refresh_token: str) -> TokenResponse:
         """Rotate a refresh token (revoke old + issue new) and commit."""
         token_hash = hash_token(refresh_token)
         db_token = await self.refresh_token_crud.get_by_token_hash(
@@ -101,7 +98,7 @@ class TokenService:
         user = await self.user_crud.get(session, db_token.user_id)
         if not user or not user.is_active or user.is_deleted:
             raise InvalidTokenError("User not found or inactive")
-        if user.status in (UserStatus.SUSPENDED, UserStatus.PENDING_VERIFICATION):
+        if user.status != UserStatus.ACTIVE:
             raise InvalidTokenError("User account is not active")
 
         new_access = create_access_token(str(user.id))
@@ -109,9 +106,7 @@ class TokenService:
         new_refresh_hash = hash_token(new_refresh_raw)
 
         db_token.is_revoked = True
-        expires_at = utc_now() + timedelta(
-            days=auth_config.JWT_REFRESH_TOKEN_EXPIRE_DAYS
-        )
+        expires_at = utc_now() + timedelta(days=auth_config.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
         await self.refresh_token_crud.create_token(
             session,
             user_id=user.id,
@@ -186,14 +181,12 @@ class AccountProvisioningService:
         *,
         provider: str,
         external_id: str,
-        email: Optional[str],
-        full_name: Optional[str] = None,
-        avatar_url: Optional[str] = None,
+        email: str | None,
+        full_name: str | None = None,
+        avatar_url: str | None = None,
     ) -> User:
         """Resolve a user by OAuth identity, linking or creating as needed."""
-        oauth_acc = await self.oauth_account_crud.get_by_provider(
-            session, provider, external_id
-        )
+        oauth_acc = await self.oauth_account_crud.get_by_provider(session, provider, external_id)
         if oauth_acc:
             user = await self.user_crud.get(session, oauth_acc.user_id)
             if not user:
@@ -235,9 +228,7 @@ class AccountProvisioningService:
         )
         return user
 
-    async def find_or_create_by_phone(
-        self, session: AsyncSession, *, phone: str
-    ) -> User:
+    async def find_or_create_by_phone(self, session: AsyncSession, *, phone: str) -> User:
         """Resolve a user by phone, creating an active account if absent."""
         user = await self.user_crud.get_by_phone(session, phone)
         if user:

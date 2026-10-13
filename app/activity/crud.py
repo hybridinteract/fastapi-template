@@ -1,13 +1,13 @@
 """Activity log CRUD operations."""
 
-from datetime import date, datetime, time, timezone
-from typing import Optional
+from datetime import UTC, date, datetime, time
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crud import paginated_select
+from app.core.utils import escape_like
 
 from .models import ActivityLog
 from .schemas import ActivityListParams
@@ -39,9 +39,7 @@ class ActivityLogCRUD:
         # ``sort_by`` is a Literal validated at the route layer, so an unknown
         # column is already a 422 and this getattr cannot miss.
         sort_column = getattr(ActivityLog, params.sort_by or "created_at")
-        direction = (
-            sort_column.asc() if params.sort_order == "asc" else sort_column.desc()
-        )
+        direction = sort_column.asc() if params.sort_order == "asc" else sort_column.desc()
 
         return await paginated_select(
             session,
@@ -61,20 +59,18 @@ class ActivityLogCRUD:
         """Hard delete activity logs by IDs. Does NOT commit."""
         if not ids:
             return 0
-        result = await session.execute(
-            delete(ActivityLog).where(ActivityLog.id.in_(ids))
-        )
+        result = await session.execute(delete(ActivityLog).where(ActivityLog.id.in_(ids)))
         await session.flush()
         return result.rowcount
 
     @staticmethod
     def _build_filters(
         *,
-        actor_id: Optional[UUID] = None,
-        actor_name: Optional[str] = None,
-        action: Optional[str] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
+        actor_id: UUID | None = None,
+        actor_name: str | None = None,
+        action: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> list:
         """Build WHERE clauses from filter params.
 
@@ -87,18 +83,16 @@ class ActivityLogCRUD:
         if actor_id is not None:
             filters.append(ActivityLog.actor_id == actor_id)
         if actor_name is not None:
-            filters.append(ActivityLog.actor_name.ilike(f"%{actor_name}%"))
+            filters.append(ActivityLog.actor_name.ilike(f"%{escape_like(actor_name)}%"))
         if action is not None:
             filters.append(ActivityLog.action == str(action).upper())
         if date_from is not None:
             filters.append(
-                ActivityLog.created_at
-                >= datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+                ActivityLog.created_at >= datetime.combine(date_from, time.min, tzinfo=UTC)
             )
         if date_to is not None:
             filters.append(
-                ActivityLog.created_at
-                <= datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+                ActivityLog.created_at <= datetime.combine(date_to, time.max, tzinfo=UTC)
             )
         return filters
 

@@ -7,7 +7,7 @@ paths:
 
 > The long version: [`app/core/background/README.md`](../../app/core/background/README.md) ·
 > [`docs/PROJECT_CONVENTIONS.md`](../../docs/PROJECT_CONVENTIONS.md) §12.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 ## The rules
 
@@ -50,16 +50,19 @@ paths:
 
 ## Known gaps
 
-- **A missing `celery_worker` is silent.** The API accepts the request, dispatches, and returns 200;
-  the work is simply never done. There is no health check that asserts a worker is consuming. When a
-  task "does nothing", check `docker compose logs celery_worker` before anything else.
+- **A missing `celery_worker` is silent to the API.** It accepts the request, dispatches, and returns
+  200; the work is simply never done. The worker container has its own healthcheck
+  (`celery inspect ping` in `docker-compose.yml`), but that only reports on a worker that exists —
+  nothing on the API side notices when none is running. When a task "does nothing", check
+  `docker compose logs celery_worker` before anything else.
 - Retry policy is per-task and not centrally asserted. Read `internals/retry.py` before choosing one.
 
 ## How to re-check this rule
 
 ```bash
-# Every task in the repo, and every dispatch site.
-grep -rn "@shared_task\|@celery_app.task\|@task(" app --include="*.py"
+# Every task in the repo, and every dispatch site. Module tasks use the house decorators
+# @db_task / @simple_task (app/core/background/internals/decorators.py), not @celery_app.task.
+grep -rn "@db_task(\|@simple_task(\|@shared_task\|@celery_app.task" app --include="*.py"
 grep -rn "\.delay(\|\.apply_async(" app --include="*.py"
 
 docker compose logs celery_worker --tail 50

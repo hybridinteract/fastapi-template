@@ -13,10 +13,12 @@ from app.iam.auth.activity import ActivityAction, log_activity
 from app.iam.auth.crud import OAuthAccountCRUD
 from app.iam.auth.schemas import MeResponse
 from app.iam.auth.tokens import get_password_hash
+from app.iam.config import auth_config
 from app.iam.enums import UserStatus
 from app.iam.exceptions import (
     CannotDeleteSelfError,
     PhoneAlreadyInUseError,
+    RoleNotGrantableError,
     UserAlreadyExistsError,
     UserNotDeletedError,
     UserNotFoundError,
@@ -304,13 +306,22 @@ class AdminService:
         if not user:
             raise UserNotFoundError(str(user_id))
 
+        # Resolve every role before writing any, so a refused role cannot leave the request
+        # half-applied. developer_admin bypasses every check and is never granted here —
+        # app/iam/create_admin.py is the only way in (CLAUDE.md §5).
         existing_role_ids = {r.id for r in user.roles}
+        to_add = []
         for role_id in role_ids:
             if role_id in existing_role_ids:
                 continue
             role = await self.role_crud.get(session, role_id)
-            if role:
-                await self.role_crud.add_user_role(session, user.id, role.id)
+            if role is None:
+                continue
+            if role.name == auth_config.DEVELOPER_ADMIN_ROLE:
+                raise RoleNotGrantableError(role.name)
+            to_add.append(role)
+        for role in to_add:
+            await self.role_crud.add_user_role(session, user.id, role.id)
 
         await session.commit()
         await UserQueryService.invalidate_user(user_id)

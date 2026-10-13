@@ -3,7 +3,8 @@
 > The Next.js half of the stack. Split out of [`PROJECT_CONVENTIONS.md`](PROJECT_CONVENTIONS.md) on
 > 9 September 2026 — this is a backend template, and a fifth of its spec was React.
 > Read this only when working on a paired frontend repo; copy it there if that repo has no spec.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026 — the backend contract it relies on (snake_case
+> fields, the 422 `detail` list). The frontend code itself lives in a paired repo.
 
 The backend rules it references still apply: layering ([`PROJECT_CONVENTIONS.md`](PROJECT_CONVENTIONS.md) §4),
 permission naming (§9), and list endpoints (§10) are the contract this frontend consumes.

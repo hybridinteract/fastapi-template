@@ -6,7 +6,6 @@ Comprehensive RBAC utilities and PermissionChecker.
 
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy import exists as sql_exists
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +14,7 @@ from app.core.database import SessionDep
 from app.core.logging import get_logger
 from app.iam.auth.current_user import CurrentUserDep
 from app.iam.config import auth_config
+from app.iam.exceptions import AccessDeniedError, MissingPermissionError
 from app.iam.permission.models import Permission, Role, RolePermission
 from app.iam.user.models import User as UserModel
 from app.iam.user.models import UserRole
@@ -57,16 +57,14 @@ class BasePermissionChecker:
                 return current_user
 
         self.handle_authorization_failure(current_user)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        # Reached only if a subclass overrides the hook without raising.
+        raise AccessDeniedError()
 
     def handle_authorization_failure(self, current_user: UserModel) -> None:
         logger.warning(
             f"Permission denied for user {current_user.id}. Required: {self.required_permissions}"
         )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Missing required permission(s): {', '.join(self.required_permissions)}",
-        )
+        raise MissingPermissionError(self.required_permissions)
 
     @staticmethod
     async def is_super_admin(session: AsyncSession, user_id: str | UUID) -> bool:

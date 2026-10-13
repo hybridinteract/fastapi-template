@@ -3,7 +3,7 @@
 > [`PROJECT_CONVENTIONS.md`](PROJECT_CONVENTIONS.md) governs **how** code is built. This file governs
 > **where** it goes: placement, granularity, module shape, and when a new module is justified.
 > Read it before creating any module or folder — not by default.
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 13 October 2026.
 
 ## 0. The golden rule
 
@@ -75,7 +75,7 @@ A helper goes in the module that owns the concept:
 | The framework, not the domain | `app/core/<subject>.py`, subject to §2 |
 
 `app/core/utils.py` exists and is the one exception: date/time and string primitives with no domain
-meaning (`utc_now()`). Do not grow it. If your addition needs a comment explaining which feature it
+meaning (`utc_now()`, `escape_like()`). Do not grow it. If your addition needs a comment explaining which feature it
 serves, it does not belong there.
 
 ## 4. Creating a new top-level module — the bar
@@ -150,8 +150,9 @@ explain gets changed by the next person for a reason nobody records.
 > real diff underneath it. **Start where you are going to end up.**
 >
 > The size version of the rule also never fires here. It implies a threshold around 600 lines;
-> the largest file in this repo is `app/iam/user/services.py` at 354. A rule that never triggers
-> does not make the decision — it just means the decision gets made by accident.
+> the largest file in any module is `app/iam/create_admin.py` at 367, and the largest anywhere is
+> `app/core/cache/cache.py` at 531. A rule that never triggers does not make the decision — it just
+> means the decision gets made by accident.
 >
 > **A folder holding one file is the correct starting shape, not a smell.** The second file has
 > somewhere to go, and adding it is a new file rather than a restructure.
@@ -170,7 +171,9 @@ app/<module>/
 ```
 
 [`app/activity`](../app/activity) and [`app/release_notes`](../app/release_notes) are the worked
-examples — one table each, no business rules worth a second entity.
+examples — one table each, no business rules worth a second entity. Both name the file `service.py`;
+singular or plural is fine in a flat module, as long as the module is consistent.
+`app/release_notes` has no `tests/` package yet.
 
 #### Layered module — the default
 
@@ -315,6 +318,7 @@ prefix is deliberate: it makes the folder a unique grep target and keeps editor 
 
 `app/core/<subpackage>/README.md` is the documented exception: those are libraries, and `README.md`
 renders at the folder level on GitHub, which is what you want for something consumed by other code.
+`app/core/crud/SEARCH_STRATEGY.md` sits beside its README as the long-form companion — the only one.
 
 ### 6.4 Where a module's tests live
 
@@ -335,7 +339,7 @@ The name says what the thing **is**, not what it is made of or when it was added
 - **A layer's name does not change when it is a package.** `services.py` and `services/` are the
   same layer; never `service_impl/`.
 - Singular for a concept, plural for a collection: `app/iam/permission/` holds the permission model;
-  `PERMISSIONS` is the catalogue.
+  `PLATFORM_PERMISSIONS` is the catalogue.
 - **Smell list** — if you reach for one of these you have not found the real concept yet:
   `utils`, `helpers`, `common`, `shared`, `misc`, `core_*`, `*_stuff`.
 
@@ -394,7 +398,8 @@ Block the change if any of these fail:
 - [ ] A layered module's `models/__init__.py` re-exports **every** model; `crud/__init__.py`
       re-exports each class **and** its singleton; `routes/__init__.py` builds no aggregator.
 - [ ] A composite module declares its **rank order** and has `tests/test_module_boundary.py`.
-- [ ] Models registered in `app/core/alembic_models_import.py`.
+- [ ] Models registered in `app/core/alembic_models_import.py`, and the migration applies, reverses,
+      and leaves `alembic check` clean.
 - [ ] Router registered in `app/apis/v1.py`, specific prefixes before wildcard ones.
 - [ ] Nothing domain-specific was added to `app/core/`.
 - [ ] No new `utils.py` / `helpers.py` / `shared/` holding business code.

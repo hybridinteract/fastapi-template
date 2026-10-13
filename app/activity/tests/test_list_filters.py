@@ -25,3 +25,11 @@ def test_action_filter_binds_the_stored_value() -> None:
     (clause,) = ActivityLogCRUD._build_filters(action=params.action)
 
     assert clause.right.value == "CREATE"
+
+
+def test_actor_name_filter_matches_wildcards_literally() -> None:
+    # `%` and `_` are LIKE wildcards; unescaped, a search for "50%_off" would match
+    # "500 off" too. Backslash is PostgreSQL's default LIKE escape character.
+    (clause,) = ActivityLogCRUD._build_filters(actor_name="50%_off\\")
+
+    assert clause.right.value == "%50\\%\\_off\\\\%"

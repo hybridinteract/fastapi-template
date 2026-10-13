@@ -7,7 +7,7 @@
 >
 > `CLAUDE.md` and `.claude/rules/` link here **by section number** — add sections at the end rather
 > than renumbering.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 ---
 
@@ -76,7 +76,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §1.
 │   │   ├── middleware.py            # CORS, GZip, TrustedHost, timing
 │   │   ├── logging.py               # Logger factory
 │   │   ├── metrics.py               # Prometheus
-│   │   ├── utils.py                 # utc_now(), shared helpers
+│   │   ├── utils.py                 # utc_now(), escape_like() for ILIKE input
 │   │   ├── alembic_models_import.py # Single file to register ALL models for Alembic
 │   │   ├── background/              # Celery app + task infrastructure
 │   │   ├── cache/                   # Redis abstraction
@@ -154,12 +154,12 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §2.
 | Functions/methods | `snake_case` | `get_current_user()`, `create_lead()` |
 | Constants | `UPPER_SNAKE_CASE` | `PERMISSIONS`, `API_V1_PREFIX` |
 | Pydantic schemas | `PascalCase` + intent suffix | `LeadCreate`, `LeadUpdate`, `LeadResponse` |
-| CRUD instances | `<model>_crud` | `user_crud = UserCRUD(User)` |
+| CRUD instances | `<model>_crud` | `user_crud = UserCRUD()` — the class supplies its model |
 | DI factories | `get_<name>_service` | `get_lead_service()` in `dependencies.py` |
-| Router instances | `<module>_router` | `lead_router = APIRouter(...)` |
+| Router instances | `router` in a module with one; `<concern>_router` with several | `router` (aliased `activity_router` in `v1.py`); `auth_router`, `admin_router` |
 | DB tables | `plural_snake_case` | `users`, `refresh_tokens` |
 | Index names | `ix_<table>_<columns>` | `ix_users_status` |
-| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init.py` |
+| Migration files | `YYYY_MM_DD_HHMM-<rev>_<slug>.py` | `2026_02_09_0657-8600ba4ec5f7_user_init_models.py` |
 | Permissions | `resource:action[:scope]` | `leads:create`, `leads:view:all` |
 
 ### Frontend
@@ -178,9 +178,9 @@ Route → Service → CRUD → Model
 
 | Layer | Responsibility | Hard Rules |
 |-------|---------------|------------|
-| **Routes** | Parse HTTP, call service, return response | No business logic. No direct DB queries. Use `Depends()` for everything. |
+| **Routes** | Parse HTTP, call service, return response | No business logic. No direct DB queries. Every dependency is an `Annotated` alias (§5) — never a bare `Depends()` default. |
 | **Services** | Business logic, orchestration | Owns `commit()` / `rollback()`. Never import FastAPI types. |
-| **CRUD** | SQL operations | Never `session.commit()`. Only `add()`, `flush()`, `refresh()`. Extend `CRUDBase`. |
+| **CRUD** | SQL operations | Never `commit()` or `rollback()` — `flush()`, then `refresh()`. Extend `CRUDBase`. |
 | **Schemas** | Request/response shapes | Split by intent: `Create`, `Update`, `Response`. |
 | **Models** | Database tables | Pure data containers. No business logic. |
 
@@ -294,14 +294,16 @@ Never run blocking code inside an `async def` function; it will stall the event 
 async def get_lead(lead_id: UUID, service: LeadServiceDep, session: SessionDep) -> LeadResponse:
     return await service.get_lead(session, lead_id)
 
-# ✅ plain def — blocking / sync-only code, runs in threadpool
-@router.get("/export")
-def export_leads_csv(service: LeadServiceDep, session: SessionDep) -> StreamingResponse:
-    data = service.build_csv_sync(session)
-    ...
+# ✅ plain def — blocking, sync-only work with no database; runs in the threadpool
+@router.post("/preview")
+def render_preview(body: PreviewRequest) -> Response:
+    pdf = render_pdf(body.html)   # a blocking library call
+    return Response(pdf, media_type="application/pdf")
 ```
 
-When you must mix blocking and async code, use **Asyncer** (`asyncify` / `syncify`) instead of raw `asyncio` or `anyio`.
+A plain `def` route **cannot use the `AsyncSession`** — every query needs an `await`. When a route
+needs both, make it `async def`, load the rows through the service, and run the blocking step with
+**Asyncer**: `await asyncify(build_csv)(rows)`. Never raw `asyncio` or `anyio`.
 
 ---
 
@@ -362,12 +364,12 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ```
 
 ```python
-# app/iam/dependencies.py
+# app/iam/auth/current_user.py — re-exported by app.iam.dependencies and app.iam
 from typing import Annotated
 from fastapi import Depends
 from app.iam.user.models import User
 
-CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 ```
 
 ```python
@@ -528,7 +530,8 @@ class MyModel(Base):
 
 - `app/core/settings.py` — Pydantic `BaseSettings`, loaded from `.env`
 - Group fields with section comments: `# === Database ===`
-- Required secrets have no default (fail fast): `SECRET_KEY: str = Field(...)`
+- Required secrets have no default (fail fast): `SECRET_KEY: str = Field(description="...")` —
+  no default at all, never the `Field(...)` Ellipsis
 - Computed values use `@property`; cache instance with `@lru_cache()`
 - All env vars documented in `.env.example` with inline comments
 
@@ -581,11 +584,16 @@ PERMISSIONS = [
 
 ### Seed script (`app/iam/seed.py`)
 
-- **Idempotent** — only inserts missing data; safe to re-run
+- **Idempotent** — only inserts missing permissions, roles and grants; never deletes. It re-inserts
+  *any* missing catalogue grant, including one an operator revoked — the gap is recorded in
+  [`permissions.md`](../.claude/rules/permissions.md) under Known gaps
 - Runs automatically on startup via `lifespan` in `main.py`
-- `developer_admin` bypasses all permission checks
-- `is_system=True` roles cannot be deleted via UI
-- All project-specific roles/permissions defined here — nowhere else
+- **It defines nothing itself.** Roles and permissions live in `app/iam/permission_catalog.py`; a
+  downstream project adds its own through `extra_roles()` / `extra_permissions()` in
+  `app/iam/extensions.py`
+- `developer_admin` bypasses all permission checks, and is never granted through the API
+- `is_system=True` marks a platform role. No route deletes roles today, so the flag guards nothing
+  yet — a role-delete route must refuse it
 
 ### Route permission guard
 
@@ -745,14 +753,17 @@ app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)  # /api/v1
 
 ```python
 # app/<feature>/exceptions.py
-class LeadNotFoundException(HTTPException):
-    def __init__(self, lead_id: str):
-        super().__init__(status_code=404, detail=f"Lead {lead_id} not found")
+class LeadNotFoundError(HTTPException):
+    def __init__(self, lead_id: str) -> None:
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead not found: {lead_id}")
 ```
 
-- Each module defines domain exceptions in `exceptions.py`
-- Never raise raw `HTTPException(500)` from services
-- `app/core/exceptions.py` handles: 422 (validation), 409 (integrity), 503 (operational), 500 (sqlalchemy), 400 (value), 403 (permission), 500 (catch-all)
+- Each module defines domain exceptions in `exceptions.py`, named `<Thing><Problem>Error`
+- **Services and routes never build a raw `HTTPException(...)`** — only `app/core/exceptions.py` and
+  the auth layer may (`CLAUDE.md` §6). Checked by `app/core/tests/test_layering.py`
+- `app/core/exceptions.py` handles: 422 (request and Pydantic validation), 409 (integrity),
+  503 (operational), 500 (SQLAlchemy), 400 (`ValueError`), 403 (`PermissionError`),
+  404 (`FileNotFoundError`), 408 (`TimeoutError`), 500 (catch-all)
 
 ---
 
@@ -865,13 +876,13 @@ link here by number.
 □ Define schemas (Create, Update, Response)
 □ Define ORM model
 □ Register model in app/core/alembic_models_import.py
-□ alembic revision --autogenerate -m "<desc>" && alembic upgrade head
+□ Migration via /new-migration: autogenerate, read it, upgrade → downgrade → upgrade, alembic check
 □ Implement CRUD extending CRUDBase
 □ Implement service (receives CRUD via constructor, owns commit)
 □ Create dependencies.py (wire CRUD → service, declare cross-module deps)
 □ Define domain exceptions in exceptions.py
-□ Add permissions in app/iam/seed.py (PERMISSIONS + ROLE_PERMISSIONS)
-□ Define routes (inject service via Depends(get_<name>_service))
+□ Add permissions in app/iam/permission_catalog.py (PLATFORM_PERMISSIONS + PLATFORM_ROLE_PERMISSIONS)
+□ Define routes (inject the service via its XServiceDep alias, gated by require_permission)
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
 □ Write app/<feature>/<feature>_doc/how-it-works.md
@@ -887,7 +898,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §5.
 
 ### Backend — never do
 - Business logic in routes
-- `session.commit()` in CRUD layer
+- `commit()` or `rollback()` in the CRUD layer
 - `datetime.utcnow()` — use `utc_now()` from `app.core.utils` (§6)
 - Hardcoded secrets or config values
 - Raw SQL strings — always use SQLAlchemy ORM/Core
@@ -918,7 +929,8 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §5.
 See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §6.
 
 ### Both — never do
-- Files exceeding 200 lines without extracting sub-modules
+- Split a file because of its line count — split by entity or cohesive job (§4; `DECISIONS.md`,
+  10 September 2026)
 - Generate code without reading existing code first
 - Add unrequested features, refactors, or abstractions
 
@@ -935,7 +947,7 @@ See [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) §6.
 | Feature-specific business logic? | `app/<feature>/services/` |
 | DB row definition? | `app/<feature>/models/` |
 | API contract shape? | `app/<feature>/schemas/` |
-| Who can do what? | `app/<feature>/permissions.py` + `user/seed.py` |
+| Who can do what? | `app/iam/permission_catalog.py`, applied by `app/iam/seed.py` |
 | Background task? | `app/<feature>/tasks.py` |
 | FastAPI `Depends()` wiring? | `app/<feature>/dependencies.py` |
 

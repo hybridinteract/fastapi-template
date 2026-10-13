@@ -7,16 +7,21 @@ import hashlib
 import logging
 import secrets
 from datetime import timedelta
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionDep
+from app.core.settings import settings
 from app.core.utils import utc_now
 from app.iam.auth.activity import ActivityAction, log_activity
 from app.iam.auth.crud import PhoneOTPCRUD, phone_otp_crud
-from app.iam.auth.exceptions import InvalidOTPError, TooManyOTPAttemptsError
+from app.iam.auth.exceptions import (
+    InvalidOTPError,
+    SmsProviderNotConfiguredError,
+    TooManyOTPAttemptsError,
+)
 from app.iam.auth.providers import Provider
 from app.iam.auth.schemas import OTPRequestSchema, OTPVerifySchema, TokenResponse
 from app.iam.auth.services import AccountProvisioningService, TokenService
@@ -42,6 +47,10 @@ def _hash_otp(otp: str) -> str:
 
 def _send_otp(phone: str, otp: str, sms_provider: str) -> None:
     if sms_provider == "noop":
+        # The noop sender's whole job is to put the code where a developer can read it — the
+        # log. In production that hands every code to whoever can read the logs. Fail closed.
+        if settings.is_production:
+            raise SmsProviderNotConfiguredError()
         logger.info(f"[DEV OTP] phone={phone} otp={otp}")
         return
     raise NotImplementedError(f"SMS provider '{sms_provider}' not implemented")
@@ -60,9 +69,7 @@ class PhoneOTPService:
         self.token_service = token_service
         self.provisioning = provisioning
 
-    async def request_otp(
-        self, session: AsyncSession, phone: str
-    ) -> dict:
+    async def request_otp(self, session: AsyncSession, phone: str) -> dict:
         await self.phone_otp_crud.invalidate_all_for_phone(session, phone)
 
         otp_raw = _generate_otp(auth_config.OTP_LENGTH)
@@ -83,11 +90,9 @@ class PhoneOTPService:
         phone: str,
         otp: str,
         *,
-        device_info: Optional[str] = None,
+        device_info: str | None = None,
     ) -> TokenResponse:
-        otp_record = await self.phone_otp_crud.get_valid_otp(
-            session, phone, for_update=True
-        )
+        otp_record = await self.phone_otp_crud.get_valid_otp(session, phone, for_update=True)
         if not otp_record:
             raise InvalidOTPError()
         if (otp_record.attempts or 0) >= auth_config.OTP_MAX_ATTEMPTS:
@@ -111,12 +116,11 @@ class PhoneOTPService:
             details={"phone": phone, "provider": PROVIDER_NAME},
         )
 
-        return await self.token_service.issue_tokens(
-            session, user, device_info=device_info
-        )
+        return await self.token_service.issue_tokens(session, user, device_info=device_info)
 
 
 # ── DI wiring ─────────────────────────────────────────────────────────────────
+
 
 def get_phone_otp_service(
     token_service: TokenServiceDep,
@@ -154,9 +158,7 @@ async def verify_otp(
     service: PhoneOTPServiceDep,
 ) -> TokenResponse:
     """Verify the OTP and issue tokens. Creates an account if the phone is new."""
-    return await service.verify_otp(
-        session, body.phone, body.otp, device_info=body.device_info
-    )
+    return await service.verify_otp(session, body.phone, body.otp, device_info=body.device_info)
 
 
 provider = Provider(

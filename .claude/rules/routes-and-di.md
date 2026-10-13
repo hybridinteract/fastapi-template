@@ -10,7 +10,7 @@ paths:
 # Routes, dependency injection, and list endpoints
 
 > The long version: [`docs/PROJECT_CONVENTIONS.md`](../../docs/PROJECT_CONVENTIONS.md) §4, §5, §10, §11.
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 13 October 2026.
 
 ## The rules
 
@@ -57,8 +57,11 @@ Route  params: Annotated[XListParams, Query()]
   package can be strictly one sibling per entity. (`app/activity` predates this and still declares
   `ActivityListParams` in `schemas.py`.) **The `Literal` and the CRUD layer's `allowed_fields`
   whitelist must match** — a dynamic `ORDER BY` with no whitelist is an injection surface.
+  (`app/activity` has no `allowed_fields`: its CRUD does `getattr` on a `sort_by` that Pydantic has
+  already constrained to the `Literal`, so the `Literal` is the whitelist. Either way, one list.)
 - **One `WHERE`**: filters, then search. Never post-filter in Python, and never build `ILIKE` without
-  escaping `%` and `_`.
+  escaping `%` and `_` — `f"%{escape_like(search)}%"`, from `app.core.utils`. Unescaped, a search for
+  `50%` matches `500 off`, and one containing a backslash cannot match itself.
 - Page with `paginated_select()`, which returns `(items, total)` in one round trip.
 - **Re-declare any default that should differ from `ListParams`.** `ActivityListParams` keeps a page
   size of 50; adopting the base class without re-declaring silently changes your endpoint's contract.
@@ -79,6 +82,8 @@ Route  params: Annotated[XListParams, Query()]
   screen, not before.
 - **`app/core/crud/helpers.py`** builds `ORDER BY` dynamically — that is the whitelisted implementation
   the rule points at, not a violation of it.
+- **`app/core/main.py` passes `prefix=settings.API_V1_PREFIX` to `include_router`** (rule 7). That is
+  the API version, a deployment setting, not part of any module's routes.
 
 ## Known gaps
 
@@ -96,4 +101,8 @@ uv run pytest app/core/tests/test_layering.py -v
 
 # Router order.
 uv run pytest app/apis/tests/test_route_registration.py -v
+
+# Every ILIKE must take an escape_like()'d pattern. Today: activity/crud.py inline, and the
+# user search in iam/user/crud.py, which builds it once as `term` (lines 106, 132).
+grep -rn "ilike(\|term = " app --include="*.py" | grep -v tests
 ```

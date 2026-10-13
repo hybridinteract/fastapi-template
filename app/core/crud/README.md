@@ -168,7 +168,7 @@ class ThingCRUD(CRUDBase[Thing, ThingCreate, ThingUpdate]):
         filters = [Thing.is_deleted.is_(False)]
 
         if search:
-            from app.core.utils.text import escape_like
+            from app.core.utils import escape_like
 
             term = f"%{escape_like(search)}%"
             filters.append(Thing.name.ilike(term))

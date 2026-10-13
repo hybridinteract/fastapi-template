@@ -5,6 +5,50 @@ Follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.1] — 2026-10-13
+
+Found by re-verifying every doc against the code. Four places where the code did not do what the
+docs promised were fixed in code; three that need a product decision are recorded, not changed.
+
+### Security
+- **`developer_admin` could be granted through the API.** `POST /users/{user_id}/roles` assigned any
+  role id, so a superuser could mint new total-bypass accounts over HTTP, which `CLAUDE.md` §5 forbids.
+  `assign_roles` now refuses it with `RoleNotGrantableError` (403), and checks every role before
+  writing any, so a refused request changes nothing.
+- **An `inactive` user could still sign in.** `PATCH /users/{id}` with `{"status": "inactive"}`
+  leaves `is_active` true, and the gates refused only `suspended` and `pending_verification`. Every
+  status but `active` is now refused at sign-in, on every request, and on token refresh.
+- **The `noop` SMS provider logged OTP codes in production.** It is the default and the only one
+  implemented; with phone OTP on, anyone reading the logs could sign in as any phone user. In
+  production it now refuses with `SmsProviderNotConfiguredError` (503).
+
+### Fixed
+- 🐞 **`ILIKE` search input was never escaped**, so `50%` matched `500 off`, `a_b` matched `axb`, and
+  a search containing a backslash could not match itself (verified on Postgres 16). New
+  `escape_like()` in `app.core.utils`, used by the activity `actor_name` filter and the user search.
+  The search docs already told you to import it — from a module that never existed.
+
+### Changed
+- `require_permission` denies with named `MissingPermissionError` / `AccessDeniedError` instead of a
+  raw `HTTPException`; status, message and headers are byte-identical.
+- `get_session`'s docstring example showed a route calling CRUD and committing — the pattern
+  `CLAUDE.md` §2 forbids. It now shows route → service.
+
+### Docs
+- All 19 stamped docs re-verified against the code, and their errors fixed in place — among them a
+  seed that "defines all roles" (the catalogue does), a `user/seed.py` and `get_current_active_user`
+  that do not exist, an `AUTH_EXPOSE_DEV_CODES` setting that does not exist, a "no worker
+  healthcheck" gap that was closed, and a task-listing grep that missed `@db_task`.
+- **Recorded in `.claude/rules/permissions.md` → Known gaps, not changed:** 18 admin routes gate on
+  `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; the seed
+  grants back any catalogue grant an operator revoked, at every startup; and no auth route has a
+  throttle.
+
+### Upgrade
+Behaviour changes to check against your clients: users with `status = "inactive"` are now locked
+out; assigning `developer_admin` through the API returns 403; phone OTP with `OTP_SMS_PROVIDER=noop`
+returns 503 in production; and `%` / `_` in search input now match literally.
+
 ## [2.3.0] — 2026-10-12
 
 Dependency refresh with security fixes, plus three pre-existing defects found while verifying it.

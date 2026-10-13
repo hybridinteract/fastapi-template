@@ -55,7 +55,7 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive",
         )
-    if user.status in (UserStatus.SUSPENDED, UserStatus.PENDING_VERIFICATION):
+    if user.status != UserStatus.ACTIVE:  # INACTIVE too — see assert_user_active
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is not active",

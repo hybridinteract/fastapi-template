@@ -1,7 +1,7 @@
 # AI Agent Integration — Discussion Notes & Draft Direction
 
 > Status: **STILL A PROPOSAL** — not acted on.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 > Working document from an architecture discussion on integrating agentic AI into the `fastapi-template`
 > (used across 7+ production ERP/CRM/Ecom projects). Not yet a finalized convention — captures research,
@@ -34,7 +34,7 @@ These matter because the AI conventions should **reuse** them, not duplicate the
 |---|---|---|
 | Layered architecture, service owns transactions | `docs/PROJECT_CONVENTIONS.md` §4 | Agent tools must call **services**, never CRUD directly — same rule as human-facing routes |
 | DI wiring | `<module>/dependencies.py` | Agent/tool factories follow the same `Annotated` + `Depends()` pattern |
-| Celery + retry/circuit-breaker | `app/core/background/internals/` | Long-running agent workflows reuse this instead of a new orchestration engine |
+| Celery + retry/circuit-breaker | `app/core/background/internals/` (retry), `extras/circuit_breaker.py` | Long-running agent workflows reuse this instead of a new orchestration engine |
 | Redis cache abstraction | `app/core/cache/` | Reuse for rate limiting / usage caps on agent calls |
 | Append-only audit log | `app/activity/` (`ActivityLog`: actor_id, action, resource_type/id, details JSONB) | Agent actions should log here too — see open question in §7 |
 | RBAC, `resource:action[:scope]` permissions | `app/iam/permission/` | Extend with an agent-specific permission namespace |

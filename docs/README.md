@@ -1,7 +1,7 @@
 # Documentation Map
 
 > Start here. This file lists every document, what it owns, and when to read it.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 **One owner per rule.** A rule is stated in full in exactly one place. Everywhere else summarises it
 in a sentence and links here. Copies drift, and then they disagree — see

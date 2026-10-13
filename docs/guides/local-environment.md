@@ -1,7 +1,7 @@
 # Local Environment
 
 > Getting the stack running, and the facts about it that cost time to rediscover.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 For a first run, follow the Quick Start in [`../../README.md`](../../README.md). This guide covers
 what that does not: the host/container split, and the things that surprise people.
@@ -50,16 +50,17 @@ docker compose exec api python -m app.iam.seed
   Running `python -m app.iam.seed` by hand is for when you have just added permissions and do not
   want to restart.
 
-- **The seed is additive.** It inserts what is missing; it does not remove or re-grant. A permission
-  added to the catalogue reaches `developer_admin` automatically, but an existing role's grants are
-  not recomputed.
+- **The seed never deletes, but it does re-grant.** It inserts every catalogue grant that is
+  missing — so a grant you revoked on the access-control screen comes back at the next restart.
+  Recorded in [`../../.claude/rules/permissions.md`](../../.claude/rules/permissions.md), Known gaps.
 
 - **`api` mounts `./app` read-only** (`./app:/app/app:ro`). Code changes are visible to the container
   immediately; anything that writes inside `app/` from within the container will fail.
 
-- **Email and OTP in development.** `AUTH_EXPOSE_DEV_CODES=true` returns codes in the API response so
-  you can sign up without a mail provider. Settings refuses to boot with it on when
-  `ENVIRONMENT=production`.
+- **Phone OTP in development.** With `AUTH_PHONE_OTP_ENABLED=true`, the default
+  `OTP_SMS_PROVIDER=noop` writes each code to the app log as `[DEV OTP] phone=… otp=…`. It is the only
+  provider implemented. With `ENVIRONMENT=production` it refuses to send (503) rather than log a
+  code. Email sign-up sends no verification mail; there is no mail provider.
 
 - **A task that never runs is usually a missing worker.** The API accepts the request and dispatches
   happily with no `celery_worker` beside it. Check `docker compose logs celery_worker`, not the API's

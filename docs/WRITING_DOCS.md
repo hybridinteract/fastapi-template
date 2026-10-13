@@ -1,7 +1,7 @@
 # Writing Docs — one owner per rule
 
 > Read this before you write or move any `.md` in this repo.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 **A rule is stated in full in exactly one place.** Everywhere else summarises it in a sentence and
 links. Never paste a rule into a second file — copies drift, then they disagree, and nobody can tell

@@ -65,6 +65,40 @@ class ProtectedRoleError(HTTPException):
         )
 
 
+class RoleNotGrantableError(HTTPException):
+    """``developer_admin`` bypasses every check, so the API never grants it.
+
+    ``app/iam/create_admin.py`` is the only way to create one — ``.claude/rules/permissions.md``
+    rule 7.
+    """
+
+    def __init__(self, role_name: str) -> None:
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The {role_name} role cannot be granted through the API",
+        )
+
+
+class MissingPermissionError(HTTPException):
+    """The caller lacks a permission the route is gated on (``require_permission``)."""
+
+    def __init__(self, permissions: list[str]) -> None:
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing required permission(s): {', '.join(permissions)}",
+        )
+
+
+class AccessDeniedError(HTTPException):
+    """Fallback 403 when a checker subclass's failure hook logs instead of raising."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+
 __all__ = [
     "UserNotFoundError",
     "UserAlreadyExistsError",
@@ -73,4 +107,7 @@ __all__ = [
     "UserNotDeletedError",
     "RoleNotFoundError",
     "ProtectedRoleError",
+    "RoleNotGrantableError",
+    "MissingPermissionError",
+    "AccessDeniedError",
 ]

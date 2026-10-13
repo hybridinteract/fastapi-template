@@ -1,7 +1,7 @@
 # Research
 
 > Evaluate options before deciding. Every note ends in a recommendation.
-> Last verified against the code: 9 September 2026.
+> Last verified against the code: 13 October 2026.
 
 One file per question, `kebab-case.md`. Copy [`_TEMPLATE.md`](_TEMPLATE.md).
 

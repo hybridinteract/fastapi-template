@@ -11,7 +11,7 @@ paths:
 # Layering — the service owns the transaction
 
 > The long version: [`docs/PROJECT_CONVENTIONS.md`](../../docs/PROJECT_CONVENTIONS.md) §4.
-> Last verified against the code: 10 September 2026.
+> Last verified against the code: 13 October 2026.
 
 ```
 Route ──Depends()──▶ Service ──constructor──▶ CRUD ──Depends()──▶ Session
@@ -45,7 +45,7 @@ Route ──Depends()──▶ Service ──constructor──▶ CRUD ──Dep
 | Where | Commits | Notes |
 |---|---|---|
 | `app/iam/user/services.py` | 8 | The busiest service; the shape to copy |
-| `app/iam/auth/services.py` | 4 | Plus 3 more in `auth/providers/` — providers are service-layer |
+| `app/iam/auth/services.py` | 4 | Plus 4 more in `auth/providers/` (2 each) — providers are service-layer |
 | `app/release_notes/service.py` | 4 | Singular `service.py`; small modules keep the flat name |
 | `app/iam/permission/services.py` | 1 | |
 | `app/activity/service.py` | 1 | |
@@ -54,9 +54,11 @@ CRUD files — `app/*/crud.py`, `app/iam/*/crud.py`, `app/core/crud/` — contai
 
 ## Where it is deliberately NOT applied
 
-- **`app/core/database.py`** commits in the session dependency's teardown, and
-  **`app/core/background/internals/`** commits in the Celery session helpers. Those files *are* the
-  transaction boundary; they are infrastructure, not a service.
+- **`app/core/background/internals/`** commits in the Celery session helpers (`base.py`,
+  `context.py`, `session.py`). A task has no service in front of it; those helpers *are* its
+  transaction boundary.
+- **`app/core/database.py`'s `get_session` never commits.** It rolls back on an unexpected error;
+  a named `HTTPException` passes through, and closing the session discards anything uncommitted.
 - **`app/iam/auth/providers/*.py`** commit. They are service-layer despite the folder name — a
   provider is the sign-in service for one identity source.
 - **`app/iam/user/query_service.py`** never commits. It is a read/cache path, not a mutation service.
@@ -72,7 +74,8 @@ CRUD files — `app/*/crud.py`, `app/iam/*/crud.py`, `app/core/crud/` — contai
 ## How to re-check this rule
 
 ```bash
-# Every commit() call site, by file. CRUD files must not appear.
+# Every commit() call site, by file. CRUD files must not appear. Two hits are docstring
+# mentions, not calls: release_notes/service.py:5 and user/query_service.py:36.
 grep -rn "session.commit()" app --include="*.py" | grep -v "^app/core/"
 
 # The layering test, which is the enforced version of rules 2 and the exceptions rule.

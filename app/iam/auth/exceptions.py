@@ -59,3 +59,17 @@ class TooManyOTPAttemptsError(HTTPException):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many attempts",
         )
+
+
+class SmsProviderNotConfiguredError(HTTPException):
+    """Phone OTP is on in production, but no real SMS provider is configured.
+
+    The ``noop`` sender writes the code into the log, which in production would let anyone
+    who can read the logs sign in as any phone user — so it refuses instead.
+    """
+
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SMS delivery is not configured",
+        )
