@@ -80,31 +80,34 @@ def test_every_module_has_the_required_files() -> None:
 
 
 def test_every_module_documents_itself() -> None:
-    """Docs travel with the module, in app/<module>/<module>_doc/how-it-works.md."""
+    """Docs travel with the module: app/<module>/README.md, and docs/ beside it for more."""
     missing: list[str] = []
     stray: list[str] = []
 
     for module in business_modules():
-        note = module / f"{module.name}_doc" / "how-it-works.md"
-        if not note.exists():
-            missing.append(rel(note))
-        # A loose .md beside the .py files means the module's docs have two homes.
-        stray += [rel(p) for p in module.glob("*.md")]
+        readme = module / "README.md"
+        if not readme.exists():
+            missing.append(rel(readme))
+        # Any other loose .md beside the .py files means the module's docs have two homes.
+        stray += [rel(p) for p in module.glob("*.md") if p.name != "README.md"]
+        # The pre-2.3.1 layout, renamed to README.md.
+        old = module / f"{module.name}_doc"
+        if old.is_dir():
+            stray.append(f"{rel(old)}/  (move how-it-works.md to README.md, the rest to docs/)")
 
     assert not missing, (
-        "Write the module's developer note — one page: what it is for, its shape and the\n"
-        "step that chose it, its tables, how a request flows through it, and the rules that\n"
-        "are easy to trip over. app/iam/iam_doc/how-it-works.md is the reference.\n  "
-        + "\n  ".join(missing)
+        "Write the module's README — what it is for, its shape and the step that chose it,\n"
+        "its tables, how a request flows through it, and the rules that are easy to trip\n"
+        "over. app/iam/README.md is the reference.\n  " + "\n  ".join(missing)
     )
     assert not stray, (
-        "Move these into the module's <module>_doc/ folder — no loose .md beside the code:\n  "
+        "Move these into the module's docs/ folder and link them from its README.md:\n  "
         + "\n  ".join(stray)
     )
 
 
 def test_a_composite_module_keeps_one_of_each_shared_file() -> None:
-    """A composite has ONE dependencies.py, tests/ and <module>_doc/ — at the root.
+    """A composite has ONE dependencies.py, tests/, README.md and docs/ — at the root.
 
     A second `dependencies.py` inside a sub-module is how a composite stops being one
     module: each half grows its own cross-module imports and they quietly become two
@@ -119,11 +122,13 @@ def test_a_composite_module_keeps_one_of_each_shared_file() -> None:
             for filename in ("dependencies.py", "seed.py"):
                 if (sub / filename).exists():
                     offences.append(f"{rel(sub)}/{filename}  belongs at {rel(module)}/{filename}")
-            for folder in ("tests", f"{sub.name}_doc"):
+            for folder in ("tests", "docs"):
                 if (sub / folder).is_dir():
                     offences.append(f"{rel(sub)}/{folder}/  belongs at the module root")
+            if (sub / "README.md").exists():
+                offences.append(f"{rel(sub)}/README.md  belongs in {rel(module)}/README.md")
 
     assert not offences, (
-        "A composite module keeps one dependencies.py, one tests/ and one <module>_doc/ "
+        "A composite module keeps one dependencies.py, tests/, README.md and docs/ "
         "at its root:\n  " + "\n  ".join(offences)
     )

@@ -14,7 +14,7 @@ in a sentence and links here. Copies drift, and then they disagree — see
 | [`../CLAUDE.md`](../CLAUDE.md) | "What must I never get wrong?" | Loaded in full at the start of every session |
 | [`../.claude/rules/`](../.claude/rules/) | "What are the rules for *this* file I'm editing?" | Loaded automatically when a matching file is read — never otherwise |
 | `docs/` (this folder) | "What is the house spec? How do I do X? What are we building? Which option wins?" | On demand, by link |
-| `app/<module>/<module>_doc/` | "How does this one module work?" | On demand, when working in that module |
+| `app/<module>/README.md` | "How does this one module work?" | On demand, when working in that module |
 
 Nothing else gets a folder. If a document does not fit one of these, it is probably two documents.
 

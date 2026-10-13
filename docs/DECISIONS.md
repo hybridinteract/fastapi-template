@@ -189,3 +189,22 @@ without erroring, a router registered in the wrong order swallows sibling paths.
 **Rejected:** Relying on code review. It is where all four of these got through before.
 
 **Owner:** [`../.claude/rules/tests.md`](../.claude/rules/tests.md).
+
+## 13 October 2026 — A module's doc is its `README.md`; more than one goes in `docs/`
+
+**Decided:** Each module documents itself in `app/<module>/README.md`. A module that needs more than
+one document adds `app/<module>/docs/`, `kebab-case.md` inside, linked from the README. This
+replaces `app/<module>/<module>_doc/how-it-works.md`, and `app/core/crud/SEARCH_STRATEGY.md` moved to
+`app/core/crud/docs/search-strategy.md`.
+
+**Why:** `README.md` is the industry default for a folder's documentation — GitHub and GitLab render
+it when you open the folder, and every reader and agent looks there first. `<module>_doc/` was a
+convention of this codebase alone, repeated the module name the path already gives, and hid the doc
+one folder down. `app/core/` already used `README.md`, so there were two patterns for one job.
+
+**Rejected:** Keeping `<module>_doc/` (the grep-target argument does not outweigh discoverability);
+a `docs/` folder for every module from the start (every module had exactly one file in it); a
+per-module `CLAUDE.md` (agent-only, and the path-scoped `.claude/rules/` already cover agents).
+
+**Owner:** [`MODULE_CONVENTIONS.md`](MODULE_CONVENTIONS.md) §6.3; enforced by
+`app/core/tests/test_module_anatomy.py`.

@@ -6,7 +6,7 @@ paths:
 # Permissions and RBAC
 
 > The long version: [`docs/PROJECT_CONVENTIONS.md`](../../docs/PROJECT_CONVENTIONS.md) §9 ·
-> the module note: [`app/iam/iam_doc/how-it-works.md`](../../app/iam/iam_doc/how-it-works.md).
+> the module doc: [`app/iam/README.md`](../../app/iam/README.md).
 > Last verified against the code: 13 October 2026.
 
 ## The rules

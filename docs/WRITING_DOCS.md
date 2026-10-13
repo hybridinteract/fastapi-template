@@ -14,7 +14,7 @@ which one is current.
 | [`CLAUDE.md`](../CLAUDE.md) | The guardrail — one line per rule, nothing longer | Every session, in full |
 | [`.claude/rules/<topic>.md`](../.claude/rules/) | One cross-cutting rule, in full, for the files it governs | Only when a matching file is read |
 | `docs/` | The house spec, how-tos, plans, research, decisions | On demand, by link |
-| `app/<module>/<module>_doc/` | Everything written about one module | On demand |
+| `app/<module>/README.md` (+ `docs/`) | Everything written about one module | On demand |
 
 ## Where does this document go?
 
@@ -28,7 +28,7 @@ which one is current.
 | A spec for something not built yet | `docs/planning/<feature>.md` |
 | An evaluation of options | `docs/research/<topic>.md` |
 | Why a decision was made, or reversed | `docs/DECISIONS.md` — append, never rewrite |
-| How one module works | `app/<module>/<module>_doc/how-it-works.md` |
+| How one module works | `app/<module>/README.md`; more than one doc → `app/<module>/docs/` |
 
 **If it does not fit a row, it is probably two documents.**
 
@@ -58,7 +58,7 @@ keeps its docs, so a doc that says "this template" is wrong the moment it is cop
 Verify a claim while working → move the date. Find a doc wrong → fix it in the same change.
 `scripts/check_docs.py` fails on a missing stamp and warns past 30 days.
 
-Module notes under `app/**/<module>_doc/` carry the stamp too. They live outside `docs/`, so the
+Module docs (`app/<module>/README.md` and `docs/`) carry the stamp too. They live outside `docs/`, so the
 checker validates their links but not their stamps — keeping those honest is on you.
 
 ## Writing a rule file

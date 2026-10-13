@@ -51,7 +51,7 @@ AST and filesystem checks — no database, no app import — so they run in the 
 and applies that shape's contract, because two of the four genuinely differ: a **shared kernel**
 wires nothing so it has no `dependencies.py`, and a **composite** may carry `exceptions.py` per
 sub-module rather than at the root. It also checks that a composite keeps **one** `dependencies.py`,
-`tests/` and `<module>_doc/`, at the root. Shapes: `docs/MODULE_CONVENTIONS.md` §6.
+`tests/` and `README.md`, at the root. Shapes: `docs/MODULE_CONVENTIONS.md` §6.
 
 ## Where it is deliberately NOT applied
 

@@ -31,10 +31,10 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 |---|---|---|
 | **Flat** | one table, no business rules | Would a second entity ever land here? If yes it should be layered — say so now, while the conversion is small |
 | **Layered** | a domain module with ≥2 entities | `models/__init__.py` re-exports **every** model · `crud/__init__.py` re-exports each class **and** its singleton · `routes/__init__.py` builds **no** aggregator · nothing imports a layer's sibling directly (`from …crud.lead import` is wrong; `from …crud import` is right) |
-| **Composite** | one bounded context, ≥2 sub-domains | Root `__init__.py` exports **nothing** and declares the rank · **one** `dependencies.py`, `tests/`, `<module>_doc/` at the root · `tests/test_module_boundary.py` exists and is not weakened |
+| **Composite** | one bounded context, ≥2 sub-domains | Root `__init__.py` exports **nothing** and declares the rank · **one** `dependencies.py`, `tests/`, `README.md` at the root · `tests/test_module_boundary.py` exists and is not weakened |
 | **Shared kernel** | business primitives, no HTTP | No routes, no models, no `dependencies.py`, no migration · `exceptions.py` raises `ValueError`, not `HTTPException` · a route here means it should have been a domain module |
 
-- **`<module>_doc/how-it-works.md` names the shape and the step that chose it.** If it does not, ask
+- **`README.md` names the shape and the step that chose it.** If it does not, ask
   the author which step decided — the answer is often "nobody chose, it just grew".
 - **These stay flat in every shape:** `dependencies.py`, `exceptions.py`, `enums.py`,
   `list_params.py`, `tasks.py`. A folder named for one of them is a finding.
@@ -79,7 +79,7 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 
 ## 7. Documentation
 
-- `app/<module>/<module>_doc/how-it-works.md` exists, has a stamp, and **describes what the
+- `app/<module>/README.md` exists, has a stamp, and **describes what the
   code now does** rather than what it did when it was written.
 - No loose `.md` beside the `.py` files.
 - Nothing was pasted into a second file that should have been a link.

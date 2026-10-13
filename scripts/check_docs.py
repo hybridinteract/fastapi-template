@@ -17,7 +17,7 @@ Four ways this repo's documentation goes wrong on its own, without anybody touch
   4. ``CLAUDE.md`` grows. It is read in full at the start of every session, so every line
      costs attention on every future task. The budget is a hard gate, not a suggestion.
 
-Module anatomy — whether ``app/<module>/<module>_doc/how-it-works.md`` exists — is checked
+Module anatomy — whether ``app/<module>/README.md`` exists — is checked
 by ``app/core/tests/test_module_anatomy.py``, not here. One owner per rule.
 
 Usage

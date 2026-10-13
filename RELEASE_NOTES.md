@@ -40,6 +40,10 @@ docs promised were fixed in code; two that need a product decision are recorded,
   `CLAUDE.md` §2 forbids. It now shows route → service.
 
 ### Docs
+- **A module's doc is now `app/<module>/README.md`**, with `app/<module>/docs/` for anything more
+  (`docs/DECISIONS.md`, 13 October 2026). `<module>_doc/how-it-works.md` moved to `README.md` in all
+  three modules, and `app/core/crud/SEARCH_STRATEGY.md` to `app/core/crud/docs/search-strategy.md`.
+  `test_module_anatomy.py` now requires the README and flags a leftover `<module>_doc/` folder.
 - All 19 stamped docs re-verified against the code, and their errors fixed in place — among them a
   seed that "defines all roles" (the catalogue does), a `user/seed.py` and `get_current_active_user`
   that do not exist, an `AUTH_EXPOSE_DEV_CODES` setting that does not exist, a "no worker
@@ -55,6 +59,10 @@ returns 503 in production; `%` / `_` in search input now match literally; and th
 re-grants revoked permissions — a grant the old seed restored after you revoked it must be revoked
 once more, and a new catalogue grant between an existing role and an existing permission needs a
 data migration.
+
+For your own modules, `test_module_anatomy.py` now fails until each one's docs are moved:
+`git mv app/<module>/<module>_doc/how-it-works.md app/<module>/README.md`, any other file into
+`app/<module>/docs/`, then `python3 scripts/check_docs.py` to find the links to update.
 
 ## [2.3.0] — 2026-10-12
 

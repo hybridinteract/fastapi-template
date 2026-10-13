@@ -1,4 +1,4 @@
-# IAM — how it works
+# `app/iam` — identity and access
 
 > One-page tour of `app/iam` — signing in, users, roles and permissions.
 >
@@ -115,7 +115,7 @@ else. The role name is configurable via `DEVELOPER_ADMIN_ROLE`, defined once in
 `SuperUserDep` admits `is_superuser` **or** `developer_admin`, and today it — not a permission —
 gates all 18 admin routes in `user/`, `permission/` and `app/release_notes`. That is a role check,
 so the catalogue's `users:*` grants control nothing yet. The decision is recorded in
-[`.claude/rules/permissions.md`](../../../.claude/rules/permissions.md) under Known gaps.
+[`.claude/rules/permissions.md`](../../.claude/rules/permissions.md) under Known gaps.
 
 ## The seed is additive
 

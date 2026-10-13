@@ -58,7 +58,7 @@ Full reasoning and the contracts: `docs/MODULE_CONVENTIONS.md` §6.
 app/<module>/
 ├── __init__.py  dependencies.py  exceptions.py  enums.py
 ├── models.py  schemas.py  crud.py  services.py  routes.py  tasks.py
-├── <module>_doc/how-it-works.md
+├── README.md
 └── tests/__init__.py
 ```
 
@@ -74,7 +74,7 @@ app/<module>/
 ├── exceptions.py          # REQUIRED, flat
 ├── enums.py  list_params.py  tasks.py     # always flat, never folders
 ├── models/  schemas/  crud/  services/  routes/
-├── <module>_doc/how-it-works.md
+├── README.md
 └── tests/__init__.py
 ```
 
@@ -99,7 +99,7 @@ app/<module>/
 ├── __init__.py            # exports NOTHING — a docstring that DECLARES THE RANK ORDER
 ├── dependencies.py        # ONE, for every sub-module. The only file importing across modules
 ├── seed.py  tasks.py      # one seeder, one Celery surface
-├── <module>_doc/          # ONE doc folder; one how-it-works.md covering every sub-module
+├── README.md              # ONE doc, covering every sub-module (docs/ beside it if needed)
 ├── tests/                 # ONE tests package, incl. test_module_boundary.py
 ├── <sub_0>/               # rank 0 — imports no sibling
 │   ├── __init__.py        #   THE public surface: re-exports models, enums, exceptions
@@ -111,7 +111,7 @@ app/<module>/
 
 What goes up and what goes down:
 
-- **Root only:** `dependencies.py`, `seed.py`, `tasks.py`, `<module>_doc/`, `tests/`. One of each.
+- **Root only:** `dependencies.py`, `seed.py`, `tasks.py`, `README.md`, `docs/`, `tests/`. One of each.
   Three `dependencies.py` files and you have three modules wearing a trench coat.
 - **Per sub-module:** `enums.py`, `exceptions.py`, `list_params.py` and the layer packages. Each
   sub-domain has its own vocabulary.
@@ -128,7 +128,7 @@ app/<module>/
 ├── __init__.py            # the single public surface — an explicit __all__
 ├── <concept>.py …         # value objects and rules, named for concepts
 ├── exceptions.py          # plain ValueError subclasses — NOT HTTPException
-├── <module>_doc/how-it-works.md
+├── README.md
 └── tests/__init__.py
 ```
 
@@ -332,10 +332,11 @@ def test_dependencies_does_not_hand_a_higher_rank_to_a_lower_one() -> None:
 
 ## 6. Document, test, verify
 
-- `app/<module>/<module>_doc/how-it-works.md` — one page: what it is for, **its shape and the step
-  that chose it**, its tables, how a request flows through it, where it joins other modules, and the
-  rules that are easy to trip over. `app/iam/iam_doc/how-it-works.md` is the reference. Add the stamp
-  line: `Last verified against the code: <DD Month YYYY>`.
+- `app/<module>/README.md` — what it is for, **its shape and the step that chose it**, its tables,
+  how a request flows through it, where it joins other modules, and the rules that are easy to trip
+  over. `app/iam/README.md` is the reference. Add the stamp line:
+  `Last verified against the code: <DD Month YYYY>`. A second document goes in `app/<module>/docs/`,
+  linked from the README — never loose beside the code.
 - `app/<module>/tests/` — a package with `__init__.py`. Any file needing Postgres gets
   `pytestmark = pytest.mark.integration` under its imports, per file.
 

@@ -11,7 +11,7 @@ link to the place that states the rule in full. It is not the spec.
 >
 > Everything else goes in a file and gets one line here pointing at it:
 > `.claude/rules/<topic>.md` for a rule that governs specific files, `docs/` for a spec, guide, plan
-> or research note, `app/<module>/<module>_doc/` for one module.
+> or research note, `app/<module>/README.md` for one module.
 > **Before you add a paragraph here, delete one.**
 
 <!--
@@ -50,7 +50,7 @@ Both reach the same database — [`docs/guides/local-environment.md`](docs/guide
 | [`docs/PROJECT_CONVENTIONS.md`](docs/PROJECT_CONVENTIONS.md) | **How** code is built — 21 numbered sections | On demand |
 | [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) | **Where** code goes. Read before creating any module or folder | On demand |
 | [`docs/README.md`](docs/README.md) | The map of everything else — guides, plans, research, decisions | On demand |
-| `app/<module>/<module>_doc/` | One module. **Read the note for the module you are working on; do not preload all of them.** | On demand |
+| `app/<module>/README.md` | One module (more docs in `app/<module>/docs/`). **Read the one for the module you are working on; do not preload all of them.** | On demand |
 
 **One owner per rule.** A rule is stated in full in exactly one place; everywhere else summarises in a
 sentence and links. Copies drift, then they disagree.
@@ -72,7 +72,7 @@ every layer at once.
                                         no → FLAT       (one table, no business rules)
 ```
 
-**Name the shape and the deciding step in `<module>_doc/how-it-works.md`.**
+**Name the shape and the deciding step in the module's `README.md`.**
 
 | Layer / file | Responsibility |
 |---|---|
@@ -84,14 +84,14 @@ every layer at once.
 | `dependencies.py` | **Required, flat.** DI wiring, and the only file that imports across modules. |
 | `exceptions.py` | **Required, flat.** Named domain exceptions subclassing `HTTPException`. |
 | `enums.py` · `list_params.py` · `tasks.py` | **Always flat**, never folders. |
-| `<module>_doc/how-it-works.md` · `tests/` | **Required.** |
+| `README.md` · `tests/` | **Required.** More than one doc → `docs/` beside the README. |
 
 **A folder holding one file is the correct starting shape, not a smell.** In a layered module: one
 sibling per entity for `models`/`schemas`/`crud`/`routes`, one per cohesive job for `services`, and
 the public import surface is always the package — nobody reaches into `crud.x`.
 
-`app/core/` is infrastructure with **zero domain knowledge**, and its subpackages keep a `README.md`
-rather than a `<module>_doc/`. The bar for putting anything there is
+`app/core/` is infrastructure with **zero domain knowledge**, and its subpackages document
+themselves the same way. The bar for putting anything there is
 [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §2 — it is higher than people assume.
 
 ## 2. The layering contract — the most important rule
@@ -157,7 +157,7 @@ Only `app/core/exceptions.py` and the auth layer may.
    needs an explicit `CREATE TYPE`; `op.add_column` does not emit one.
 4. Permissions → `app/iam/permission_catalog.py`.
 5. Router → `app/apis/v1.py`, specific prefixes before wildcards.
-6. `app/<module>/<module>_doc/how-it-works.md`.
+6. `app/<module>/README.md`.
 7. `app/<module>/tests/` — a package with `__init__.py`. Mark DB-dependent files `integration`.
 8. `uv run pytest && python3 scripts/check_docs.py`.
 
@@ -171,7 +171,7 @@ Each line breaks the section in brackets; go there for the fix. Starred ones fai
 4. A raw `HTTPException(...)` built in a service or route. [§6] ★
 5. A model missing from `alembic_models_import.py`, **or from its own `models/__init__.py`** — both
    make the table invisible to autogenerate. [§3] ★
-6. A module with no `dependencies.py`, `exceptions.py`, or `<module>_doc/how-it-works.md`. [§1] ★
+6. A module with no `dependencies.py`, `exceptions.py`, or `README.md`. [§1] ★
 6b. Starting a domain module flat "until it gets big", or a composite module with no declared rank
     and no `tests/test_module_boundary.py`. [§1]
 7. Registering a `/{id}` router before a literal-prefix sibling in `app/apis/v1.py`. [§3] ★

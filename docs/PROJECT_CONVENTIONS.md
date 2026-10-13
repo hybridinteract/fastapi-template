@@ -90,7 +90,7 @@ Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTION
 │   │   ├── permission_catalog.py    # Roles + permission constants
 │   │   ├── seed.py                  # Idempotent role/permission seeder
 │   │   ├── create_admin.py          # Developer-admin CLI
-│   │   ├── iam_doc/                 # Module documentation
+│   │   ├── README.md                # Module documentation
 │   │   ├── auth/                    # Login, refresh, logout, tokens, providers
 │   │   ├── user/                    # User accounts + admin management
 │   │   └── permission/              # Roles, permissions, RBAC guards
@@ -111,7 +111,7 @@ Lives in the frontend repo. The API contract it relies on: [`FRONTEND_CONVENTION
 │       ├── list_params.py           # XListParams(ListParams) — stays flat (§10)
 │       ├── permissions.py           # Permission constants — stays flat
 │       ├── tasks.py                 # Celery tasks — stays flat
-│       ├── <feature>_doc/           # Every .md the module owns
+│       ├── README.md                # The module's doc; docs/ beside it if it needs more
 │       └── tests/                   # Every test the module owns — a package
 │
 │   # The shape above is the DEFAULT for a domain module. A module that is genuinely
@@ -885,7 +885,7 @@ link here by number.
 □ Define routes (inject the service via its XServiceDep alias, gated by require_permission)
 □ Register router in app/apis/v1.py
 □ Export public API in __init__.py
-□ Write app/<feature>/<feature>_doc/how-it-works.md
+□ Write app/<feature>/README.md
 □ Write tests in app/<feature>/tests/
 ```
 

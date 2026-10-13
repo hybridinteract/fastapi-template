@@ -92,7 +92,7 @@ Create `app/<module>/` when **all** of these hold:
 If only 1 and 2 hold, it is probably a **sub-module** of an existing module (`app/iam/permission/` is
 one). If only 4 holds, it is a service method.
 
-A new module is a commitment: a router registration, a migration, permissions, a `<module>_doc/`, a
+A new module is a commitment: a router registration, a migration, permissions, a `README.md`, a
 `tests/` package, and a line in this repo's structure that the next person has to understand.
 
 ## 5. Split vs keep together
@@ -140,7 +140,7 @@ Two questions, in order. **What it is** comes before **how it is shaped.**
 Step 3 is a question about the **domain**, not the code, so it is answerable before a line is
 written. That is the point: shape is chosen deliberately, once, at the start.
 
-**Name the shape and the deciding step in the module's `how-it-works.md`.** A shape nobody can
+**Name the shape and the deciding step in the module's `README.md`.** A shape nobody can
 explain gets changed by the next person for a reason nobody records.
 
 > **Why layered is the default, and why not "start flat and split when it gets big".**
@@ -166,11 +166,11 @@ explain gets changed by the next person for a reason nobody records.
 app/<module>/
 ├── __init__.py  dependencies.py  exceptions.py  enums.py
 ├── models.py  schemas.py  crud.py  services.py  routes.py  tasks.py
-├── <module>_doc/how-it-works.md
+├── README.md
 └── tests/__init__.py
 ```
 
-[`app/activity`](../app/activity) and [`app/release_notes`](../app/release_notes) are the worked
+[`app/activity`](../app/activity/) and [`app/release_notes`](../app/release_notes/) are the worked
 examples — one table each, no business rules worth a second entity. Both name the file `service.py`;
 singular or plural is fine in a flat module, as long as the module is consistent.
 `app/release_notes` has no `tests/` package yet.
@@ -187,7 +187,7 @@ app/<module>/
 ├── tasks.py               # flat
 ├── <concept>.py           # a helper two siblings share, named for the concept — never utils.py
 ├── models/  schemas/  crud/  services/  routes/
-├── <module>_doc/
+├── README.md              # REQUIRED — the module's doc; docs/ beside it only if one file is not enough
 └── tests/
 ```
 
@@ -230,7 +230,7 @@ structure. **Sub-domains that each own entities** — a sub-module owning no tab
 **Each sub-module is itself flat or layered** — the shape recurses. **Declared, enforced, one-way
 order** — without the rank and the test you do not have a composite module, you have `app/iam`.
 
-From outside it is one module: one `dependencies.py`, one `tests/`, one `<module>_doc/`, one seeder.
+From outside it is one module: one `dependencies.py`, one `tests/`, one `README.md`, one seeder.
 From inside it is several. That gap is the idea.
 
 A **hypothetical** example — the only path in this file you cannot open, kept because it is the
@@ -241,7 +241,7 @@ app/procurement/
 ├── __init__.py            # exports NOTHING — a docstring that DECLARES THE RANK ORDER
 ├── dependencies.py        # ONE, for all three. The only file that may import across modules
 ├── seed.py  tasks.py      # one seeder, one Celery surface
-├── procurement_doc/       # ONE doc folder; one how-it-works.md covering all three
+├── README.md              # ONE doc, covering all three sub-modules
 ├── tests/                 # ONE tests package, incl. test_module_boundary.py
 ├── product/               # rank 0 — the catalogue
 │   ├── __init__.py        #   THE public surface: re-exports models, enums, exceptions
@@ -274,7 +274,7 @@ The test is step 2's own wording: *would you want a hard one-way import directio
 A boundary you have to keep crossing is not a boundary, it is a tax.
 
 > **Why rule 5 is a test and not a convention — our own module is the cautionary tale.**
-> [`app/iam`](../app/iam) is a composite module with no rank and no boundary test, and its boundary
+> [`app/iam`](../app/iam/) is a composite module with no rank and no boundary test, and its boundary
 > has dissolved: `auth/` imports `user/` in 8 places across 3 files, `user/services.py` imports
 > `auth/` in 4, and one function-local import at
 > [`app/iam/auth/current_user.py:44`](../app/iam/auth/current_user.py) is what stops startup
@@ -289,7 +289,7 @@ app/<module>/
 ├── __init__.py            # the single public surface — an explicit __all__
 ├── <concept>.py …         # value objects and rules, named for concepts
 ├── exceptions.py          # plain ValueError subclasses — NOT HTTPException
-├── <module>_doc/  tests/
+├── README.md  tests/
 ```
 
 **No models, no schemas, no crud, no routes, no `dependencies.py`, no migration.** The test that it
@@ -301,24 +301,22 @@ business-free; a kernel is business primitives that no single domain owns.
 
 ### 6.3 Where a module's documents live
 
-**`app/<module>/<module>_doc/`** — every `.md` the module owns, starting with `how-it-works.md`. The
-prefix is deliberate: it makes the folder a unique grep target and keeps editor tabs distinguishable.
+**`app/<module>/README.md`** — the module's doc, and the one every module has. It is the industry
+default: GitHub and GitLab render it when you open the folder, and every reader looks there first.
 
-- **No loose `.md` beside the `.py` files**, and nothing about one module in `docs/`.
-- `how-it-works.md` is the developer note: what the module is for, **its shape and the step that
-  chose it**, its tables, how a request flows through it, where it joins other modules, and the
-  handful of rules that are easy to trip over.
-  **Every module has one** — [`app/iam/iam_doc/how-it-works.md`](../app/iam/iam_doc/how-it-works.md)
-  is the reference. `app/core/tests/test_module_anatomy.py` fails without it.
-- A behaviour guide, `<module>-user-guide.md`, is added once a module has real business rules.
-  Plumbing does not need one.
-- **A composite module has one `<module>_doc/` at its root**, with a single `how-it-works.md`
-  covering every sub-module. Behaviour guides may split per sub-domain, because they have different
-  readers.
+- **What it covers:** what the module is for, **its shape and the step that chose it**, its tables,
+  how a request flows through it, where it joins other modules, and the handful of rules that are
+  easy to trip over. [`app/iam/README.md`](../app/iam/README.md) is the reference.
+  `app/core/tests/test_module_anatomy.py` fails without it.
+- **More than one document → `app/<module>/docs/`**, `kebab-case.md` inside, each linked from the
+  README. A behaviour guide (`docs/user-guide.md`) is the usual second document, added once a module
+  has real business rules; plumbing does not need one.
+- **No other loose `.md` beside the `.py` files**, and nothing about one module in the root `docs/`.
+- **A composite module has one `README.md` and one `docs/`, at its root**, covering every
+  sub-module. Documents inside `docs/` may split per sub-domain, because they have different readers.
 
-`app/core/<subpackage>/README.md` is the documented exception: those are libraries, and `README.md`
-renders at the folder level on GitHub, which is what you want for something consumed by other code.
-`app/core/crud/SEARCH_STRATEGY.md` sits beside its README as the long-form companion — the only one.
+`app/core/<subpackage>/` follows the same pattern: `README.md`, plus `docs/` when it needs more —
+[`app/core/crud/docs/search-strategy.md`](../app/core/crud/docs/search-strategy.md) is the example.
 
 ### 6.4 Where a module's tests live
 
@@ -361,7 +359,7 @@ Both are a **move, not a rewrite**:
 3. **`alembic revision --autogenerate` must produce an empty diff afterwards.** Run it, confirm it is
    empty, then delete the probe migration. That empty diff is the proof the models package is
    schema-identical — a non-empty one means you changed a table, not a location.
-4. Update the module's `<module>_doc/` — including the shape it now is — and any link into it, in the
+4. Update the module's `README.md` — including the shape it now is — and any link into it, in the
    same change. `scripts/check_docs.py` catches the links you miss.
 
 **Do the conversion alone.** A shape change touches every layer at once; on a branch that is also
@@ -392,8 +390,8 @@ Then, for a new module, **what shape** — §6.1.
 
 Block the change if any of these fail:
 
-- [ ] The module's **shape is named** in `<module>_doc/how-it-works.md`, with the step that chose it.
-- [ ] New module has `__init__.py`, `dependencies.py`, `exceptions.py`, and `<module>_doc/how-it-works.md`.
+- [ ] The module's **shape is named** in its `README.md`, with the step that chose it.
+- [ ] New module has `__init__.py`, `dependencies.py`, `exceptions.py`, and `README.md`.
       *(A shared kernel has no `dependencies.py`; a composite carries `exceptions.py` per sub-module.)*
 - [ ] A layered module's `models/__init__.py` re-exports **every** model; `crud/__init__.py`
       re-exports each class **and** its singleton; `routes/__init__.py` builds no aggregator.

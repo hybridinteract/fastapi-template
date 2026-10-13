@@ -50,7 +50,7 @@ Three rules that matter:
   around this is how an audit trail silently stops existing.
 
 `app/iam` does not import this module directly — it goes through the adapter at
-[`app/iam/auth/activity.py`](../../iam/auth/activity.py), which no-ops when `app.activity` is absent.
+[`app/iam/auth/activity.py`](../iam/auth/activity.py), which no-ops when `app.activity` is absent.
 That is what keeps `app/iam` a portable drop-in for a project that deletes this module.
 
 ## Reading
