@@ -7,8 +7,8 @@ Follow [Semantic Versioning](https://semver.org/).
 
 ## [2.3.1] — 2026-10-13
 
-Found by re-verifying every doc against the code. Four places where the code did not do what the
-docs promised were fixed in code; three that need a product decision are recorded, not changed.
+Found by re-verifying every doc against the code. Five places where the code did not do what the
+docs promised were fixed in code; two that need a product decision are recorded, not changed.
 
 ### Security
 - **`developer_admin` could be granted through the API.** `POST /users/{user_id}/roles` assigned any
@@ -23,6 +23,11 @@ docs promised were fixed in code; three that need a product decision are recorde
   production it now refuses with `SmsProviderNotConfiguredError` (503).
 
 ### Fixed
+- 🐞 **A revoked permission came back at the next restart.** The seed runs in `lifespan` and
+  inserted every missing catalogue grant for every role, so revoking one on the access-control
+  screen lasted only until the app restarted. It now seeds a grant only when its role or its
+  permission is new to the database (`CLAUDE.md` §5); new roles and new permissions are still
+  granted as before.
 - 🐞 **`ILIKE` search input was never escaped**, so `50%` matched `500 off`, `a_b` matched `axb`, and
   a search containing a backslash could not match itself (verified on Postgres 16). New
   `escape_like()` in `app.core.utils`, used by the activity `actor_name` filter and the user search.
@@ -40,14 +45,16 @@ docs promised were fixed in code; three that need a product decision are recorde
   that do not exist, an `AUTH_EXPOSE_DEV_CODES` setting that does not exist, a "no worker
   healthcheck" gap that was closed, and a task-listing grep that missed `@db_task`.
 - **Recorded in `.claude/rules/permissions.md` → Known gaps, not changed:** 18 admin routes gate on
-  `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; the seed
-  grants back any catalogue grant an operator revoked, at every startup; and no auth route has a
-  throttle.
+  `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; and no
+  auth route has a throttle.
 
 ### Upgrade
 Behaviour changes to check against your clients: users with `status = "inactive"` are now locked
 out; assigning `developer_admin` through the API returns 403; phone OTP with `OTP_SMS_PROVIDER=noop`
-returns 503 in production; and `%` / `_` in search input now match literally.
+returns 503 in production; `%` / `_` in search input now match literally; and the seed no longer
+re-grants revoked permissions — a grant the old seed restored after you revoked it must be revoked
+once more, and a new catalogue grant between an existing role and an existing permission needs a
+data migration.
 
 ## [2.3.0] — 2026-10-12
 

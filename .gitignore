@@ -40,9 +40,6 @@ logs/
 htmlcov/
 .mypy_cache/
 
-# Docker (generated)
-deploy-v2/generated/
-
 # UV
 .python-version
 

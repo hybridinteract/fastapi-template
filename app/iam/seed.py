@@ -13,8 +13,8 @@ from app.iam import extensions
 from app.iam.permission.models import Permission, Role, RolePermission
 from app.iam.permission_catalog import (
     PLATFORM_PERMISSIONS,
-    PLATFORM_ROLES,
     PLATFORM_ROLE_PERMISSIONS,
+    PLATFORM_ROLES,
 )
 
 logger = get_logger(__name__)
@@ -67,7 +67,16 @@ async def _seed_role_permissions(
     roles: dict[str, Role],
     permissions: dict[str, Permission],
     existing_pairs: set[tuple],
+    known: tuple[set[str], set[str]],
 ) -> int:
+    """Grant a catalogue pair only when its role or its permission is new to the database.
+
+    ``known`` is the (role names, permission names) that existed before this run. A missing pair
+    between two of those was revoked by an admin, so re-inserting it would undo the revocation on
+    every restart. New roles still get their full grant set, and a new permission still reaches
+    the existing roles the catalogue maps it to.
+    """
+    known_roles, known_perms = known
     created = 0
     for role_name, perm_names in mapping.items():
         role = roles.get(role_name)
@@ -76,6 +85,8 @@ async def _seed_role_permissions(
         for perm_name in perm_names:
             perm = permissions.get(perm_name)
             if not perm:
+                continue
+            if role_name in known_roles and perm_name in known_perms:
                 continue
             if (role.id, perm.id) not in existing_pairs:
                 session.add(RolePermission(role_id=role.id, permission_id=perm.id))
@@ -89,25 +100,33 @@ async def _seed_role_permissions(
 async def run_seed_operations(session: AsyncSession) -> None:
     """Seed core + provider + extension permissions/roles inside an existing transaction."""
     # Load current state once
-    existing_perms = {p.name: p for p in (await session.execute(select(Permission))).scalars().all()}
+    existing_perms = {
+        p.name: p for p in (await session.execute(select(Permission))).scalars().all()
+    }
     existing_roles = {r.name: r for r in (await session.execute(select(Role))).scalars().all()}
     existing_pairs = {
         (rp.role_id, rp.permission_id)
         for rp in (await session.execute(select(RolePermission))).scalars().all()
     }
+    # Snapshot before anything is created: grants between these are the admin's, not the seed's.
+    known = (set(existing_roles), set(existing_perms))
 
     # 1. Core permissions, roles, role-permission links
     p = await _seed_permissions(session, PLATFORM_PERMISSIONS, existing_perms)
     r = await _seed_roles(session, PLATFORM_ROLES, existing_roles)
     rp = await _seed_role_permissions(
-        session, PLATFORM_ROLE_PERMISSIONS, existing_roles, existing_perms, existing_pairs
+        session, PLATFORM_ROLE_PERMISSIONS, existing_roles, existing_perms, existing_pairs, known
     )
-    if p: logger.info(f"Created {p} core permissions")
-    if r: logger.info(f"Created {r} core roles")
-    if rp: logger.info(f"Created {rp} core role-permission links")
+    if p:
+        logger.info(f"Created {p} core permissions")
+    if r:
+        logger.info(f"Created {r} core roles")
+    if rp:
+        logger.info(f"Created {rp} core role-permission links")
 
     # 2. Provider permissions (importing here ensures providers are registered)
     from app.iam.auth.providers import PROVIDERS
+
     provider_perms = []
     provider_role_mappings: dict[str, list[str]] = {}
     for prov in PROVIDERS:
@@ -117,20 +136,30 @@ async def run_seed_operations(session: AsyncSession) -> None:
 
     pp = await _seed_permissions(session, provider_perms, existing_perms)
     prp = await _seed_role_permissions(
-        session, provider_role_mappings, existing_roles, existing_perms, existing_pairs
+        session, provider_role_mappings, existing_roles, existing_perms, existing_pairs, known
     )
-    if pp: logger.info(f"Created {pp} provider permissions")
-    if prp: logger.info(f"Created {prp} provider role-permission links")
+    if pp:
+        logger.info(f"Created {pp} provider permissions")
+    if prp:
+        logger.info(f"Created {prp} provider role-permission links")
 
     # 3. Extension permissions, roles, role-permission links
     ep = await _seed_permissions(session, extensions.extra_permissions(), existing_perms)
     er = await _seed_roles(session, extensions.extra_roles(), existing_roles)
     erp = await _seed_role_permissions(
-        session, extensions.extra_role_permissions(), existing_roles, existing_perms, existing_pairs
+        session,
+        extensions.extra_role_permissions(),
+        existing_roles,
+        existing_perms,
+        existing_pairs,
+        known,
     )
-    if ep: logger.info(f"Created {ep} extension permissions")
-    if er: logger.info(f"Created {er} extension roles")
-    if erp: logger.info(f"Created {erp} extension role-permission links")
+    if ep:
+        logger.info(f"Created {ep} extension permissions")
+    if er:
+        logger.info(f"Created {er} extension roles")
+    if erp:
+        logger.info(f"Created {erp} extension role-permission links")
 
 
 async def run_seed(dispose_engine: bool = True) -> None:

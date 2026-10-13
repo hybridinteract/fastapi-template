@@ -18,8 +18,12 @@ paths:
 2. **New permissions go in [`app/iam/permission_catalog.py`](../../app/iam/permission_catalog.py)**,
    as `(resource, action, description)`, stored as `resource:action[:scope]`.
 3. **The seed is additive.** `app/iam/seed.py` inserts what is missing and never recomputes an
-   existing role's grants. A new permission reaches `developer_admin` automatically; every other
-   role's grants are whatever they already were. Do not assume a re-seed fixes a grant.
+   existing role's grants: it seeds a catalogue grant only when its **role or its permission is new
+   to the database**. So a grant revoked on the access-control screen stays revoked across restarts,
+   a new role gets its full catalogue grant, and a new permission reaches the roles the catalogue
+   maps it to. Mapping an *existing* permission to an *existing* role in the catalogue changes
+   nothing on a running database — ship that grant as a data migration. Do not assume a re-seed
+   fixes a grant.
 4. **Add a permission only when a route gates on it.** One that gates nothing still appears on the
    access-control screen looking like a control, and is not one.
 5. **Own-scope is a second permission**, not an `if` on the role: `<resource>:read` for your own rows,
@@ -68,12 +72,6 @@ paths:
 
 ## Known gaps
 
-- **Rule 3 is the intent, not what the code does.** `_seed_role_permissions` inserts every catalogue
-  grant that is missing, for every role, on every startup (the seed runs in `lifespan`). So revoking
-  a catalogue grant on the access-control screen lasts only until the next restart. Verified
-  13 October 2026: revoke `users:delete` from `admin` → re-seed → granted again. Making rule 3 true
-  (seed grants only for a role the run creates, plus `developer_admin`) changes behaviour on every
-  running deployment — and stops new catalogue grants reaching existing roles — so it needs a decision.
 - **Admin routes are gated on `SuperUserDep`, not on a permission — 18 of them**, across
   `app/iam/user/routes.py` (10), `app/iam/permission/routes.py` (3) and `app/release_notes/routes.py`
   (5). `SuperUserDep` admits only `is_superuser` or the `developer_admin` role: a role check, which

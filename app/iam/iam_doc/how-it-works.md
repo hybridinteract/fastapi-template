@@ -125,9 +125,9 @@ so the catalogue's `users:*` grants control nothing yet. The decision is recorde
 2. permissions contributed by each **enabled** provider
 3. permissions, roles and links contributed by `extensions.py`
 
-Every pass creates only what is missing — and a catalogue grant an operator revoked *is* missing,
-so the next startup grants it back (Known gaps in `permissions.md`). It never renames and never
-deletes, so
+Every pass creates only what is missing, and grants a catalogue pair only when its role or its
+permission is new to the database — so a grant an operator revoked stays revoked across restarts
+(rule 3 in `permissions.md`). It never renames and never deletes, so
 removing an entry from `permission_catalog.py` leaves the row in the database
 until you drop it by hand — and **renaming** anything seeded needs its own data
 migration, because the seed will simply create the new name alongside the old.

@@ -3,20 +3,35 @@
 > How this template gets onto a server.
 > Last verified against the code: 13 October 2026.
 
-The deployment system lives in [`../../deploy-v2/`](../../deploy-v2/) and has its own documentation.
-This page exists so you know it is there and which file to open.
+Deploy with **[deployctl](https://github.com/hybridinteract/deployctl)** — its README is the full
+documentation. This page says how it fits this template; it does not repeat the tool's docs.
 
-| Document | Covers |
-|---|---|
-| [`deploy-v2/QUICK_START.md`](../../deploy-v2/QUICK_START.md) | **Start here.** Server bring-up step by step: DNS, SSL, first deploy, day-2 operations |
-| [`deploy-v2/README.md`](../../deploy-v2/README.md) | The full system — Docker, nginx, SSL, backups, monitoring templates |
-| [`deploy-v2/DOCS_AUTH.md`](../../deploy-v2/DOCS_AUTH.md) | Putting htpasswd basic-auth in front of `/docs` |
+> The bundled `deploy-v2/` bash scripts were removed in favour of deployctl. Do not reintroduce them.
 
 ## What it is
 
-Bash-driven, no orchestrator. `deploy-v2/scripts/` holds `setup.sh`, `deploy.sh`, `ssl.sh` and
-`validate.sh`; `deploy-v2/templates/` holds the nginx, redis, prometheus, grafana and
-staging/production compose files that those scripts render.
+A CLI that deploys containerised apps to one server or a fleet over SSH, from your machine, GitHub
+Actions, or a local web panel. The server needs only Docker, an SSH user and a writable directory;
+images are built elsewhere and pulled from a registry. Releases are health-gated and roll back on
+failure.
+
+## Getting started
+
+```bash
+uv tool install git+https://github.com/hybridinteract/deployctl@v0.14.1   # pin a release tag
+gh auth login && gh auth refresh -h github.com -s read:packages
+deployctl access
+
+deployctl init --mode single      # scaffolds deploy/ — or --mode cluster
+# fill in deploy/config/*.env, then:
+deployctl setup --env production && deployctl validate --env production
+deployctl deploy doctor && deployctl deploy init
+deployctl ssl setup               # single-host TLS
+```
+
+Day to day: `deploy update`, `deploy rollback`, `backup run|list|restore`, or `ci init` so merges
+deploy themselves. Add `--dry-run` to any deploy command to print what it would run. Check the
+deployctl README for the current version and the exact flags before relying on the lines above.
 
 ## The image
 

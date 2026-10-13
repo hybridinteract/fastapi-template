@@ -50,9 +50,9 @@ docker compose exec api python -m app.iam.seed
   Running `python -m app.iam.seed` by hand is for when you have just added permissions and do not
   want to restart.
 
-- **The seed never deletes, but it does re-grant.** It inserts every catalogue grant that is
-  missing — so a grant you revoked on the access-control screen comes back at the next restart.
-  Recorded in [`../../.claude/rules/permissions.md`](../../.claude/rules/permissions.md), Known gaps.
+- **The seed never deletes and never re-grants.** A grant you revoked on the access-control screen
+  stays revoked across restarts; only a role or permission new to the database gets catalogue
+  grants. Rule 3 in [`../../.claude/rules/permissions.md`](../../.claude/rules/permissions.md).
 
 - **`api` mounts `./app` read-only** (`./app:/app/app:ro`). Code changes are visible to the container
   immediately; anything that writes inside `app/` from within the container will fail.
