@@ -65,6 +65,11 @@ docs promised were fixed in code; two that need a product decision are recorded,
     scores 0.20 against "John").
   - The default sort was chosen in the route, which `CLAUDE.md` §2 forbids; it is now chosen in
     CRUD.
+- **Less context per task, per Anthropic's skill and memory guidance.** A default search reads only
+  the guide's §1–§7. CLAUDE.md tells agents to read a cited section (`file §N`), not the whole file.
+  `/new-module` keeps its boundary-test script in `templates/`, read only for a composite module.
+  `/review-module` runs in a sub-agent, so its file reads and test output stay out of the main
+  conversation. CLAUDE.md's quoted maintainer note moved into the HTML comment the model never sees.
 - **Recorded in `.claude/rules/permissions.md` → Known gaps, not changed:** 18 admin routes gate on
   `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; and no
   auth route has a throttle.

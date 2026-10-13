@@ -3,22 +3,21 @@
 Read this before adding or changing anything. It is the **guardrail** — one line per rule, with a
 link to the place that states the rule in full. It is not the spec.
 
-> ### This file stays under 200 lines. Adding to it is the exception.
->
-> **It is read in full at the start of every session, so every line costs attention on every future
-> task.** A rule earns a place here only if breaking it is **expensive and silent** — auth,
-> permissions, money, data loss, or a failure that passes its tests.
->
-> Everything else goes in a file and gets one line here pointing at it:
-> `.claude/rules/<topic>.md` for a rule that governs specific files, `docs/` for a spec, guide, plan
-> or research note, `app/<module>/README.md` for one module.
-> **Before you add a paragraph here, delete one.**
-
 <!--
-MAINTAINER NOTE (stripped before this file reaches the model — free to write).
+MAINTAINER NOTE (stripped before this file reaches the model — free to write; visible when the
+file is opened to edit it).
+
+This file stays under 200 lines; adding to it is the exception. It is read in full at the start of
+every session, so every line costs attention on every future task. A rule earns a place here only
+if breaking it is expensive and silent — auth, permissions, money, data loss, or a failure that
+passes its tests. Everything else goes in a file and gets one line here pointing at it:
+`.claude/rules/<topic>.md` for a rule that governs specific files, `docs/` for a spec, guide, plan
+or research note, `app/<module>/README.md` for one module. Before you add a paragraph here, delete
+one.
+
 Delete the rules for modules this project removed, and put new domain rules in `.claude/rules/`,
-not here. Keep this file under 200 lines; `scripts/check_docs.py`
-fails the build otherwise. Rationale for the budget: docs/DECISIONS.md, 9 September 2026.
+not here. `scripts/check_docs.py` fails the build past 200 lines. Rationale for the budget:
+docs/DECISIONS.md, 9 September 2026.
 -->
 
 **`app/iam`, `app/activity` and `app/release_notes` are the starting modules.** `app/iam` is the
@@ -55,6 +54,8 @@ Both reach the same database — [`docs/guides/local-environment.md`](docs/guide
 **One owner per rule.** A rule is stated in full in exactly one place; everywhere else summarises in a
 sentence and links. Copies drift, then they disagree.
 Before writing any `.md`: [`docs/WRITING_DOCS.md`](docs/WRITING_DOCS.md).
+**A `file §N` citation means read that section, not the whole file:** list the headings with
+`grep -n '^##' file`, then read the section and any section it cites. Told to read a file, read all of it.
 
 ## 1. Module anatomy — pick the shape before writing a file
 → [`docs/MODULE_CONVENTIONS.md`](docs/MODULE_CONVENTIONS.md) §6 · `/new-module` does this for you

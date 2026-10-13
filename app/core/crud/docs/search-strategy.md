@@ -3,9 +3,12 @@
 > Owns the trade-offs for every search on a list or GET endpoint. To design one step by step, use
 > the `search-endpoint` skill (`.claude/skills/search-endpoint/SKILL.md`), which applies this guide.
 > Last verified against the code: 13 October 2026 — and against the PostgreSQL 18 and pgvector
-> 0.8.7 docs. Everything here also works on PostgreSQL 16, which the app runs: the §10 examples, the
-> index plans and the scores in §6 were checked on PostgreSQL 16.14 with SQLAlchemy 2.0.54 and
-> Alembic 1.20. Sources are at the end.
+> 0.8.7 docs. Everything here also works on PostgreSQL 16, which the app runs: the code in §7 and
+> §12, the index plans and the scores in §8 were checked on PostgreSQL 16.14 with SQLAlchemy 2.0.54
+> and Alembic 1.20. Sources are at the end.
+
+**§1–§7 are all a default search needs.** Their pointers into §8–§12 are for the steps beyond the
+default — follow one only when §4 chose that step.
 
 ## 1. Terms
 
@@ -19,7 +22,7 @@
 | **Growing table** | Every other table — including one that is small today |
 | **Search-as-you-type** | Results refresh on each keystroke, so the term is often a partial word |
 | **Submitted search** | The user types whole words and presses Enter |
-| **Typo-tolerant** | "jonathon" finds "Jonathan" — see §6 for what trigrams can and cannot forgive |
+| **Typo-tolerant** | "jonathon" finds "Jonathan" — see §8 for what trigrams can and cannot forgive |
 | **Ranked** | Ordered by how well each row matches, not by a column |
 
 ## 2. Start simple
@@ -27,7 +30,7 @@
 **The default search** — what most list endpoints need, and the industry-standard first step:
 
 - `ILIKE '%term%'` on each short-text field the search box covers, `OR`-ed together;
-- one GIN trigram index per field (§6);
+- one GIN trigram index per field (§8);
 - `escape_like()` on the term, `min_length=3`, `max_length=100`;
 - no ranking — the endpoint's normal sort.
 
@@ -60,23 +63,23 @@ lightest technique that meets the facts.
 
 ```
 1. Identifier?       exact match  → =             B-tree (often the unique constraint you already have)
-                     starts-with  → LIKE 'term%'  on lower(col), B-tree text_pattern_ops          §10.1
+                     starts-with  → LIKE 'term%'  on lower(col), B-tree text_pattern_ops          §12.1
                      digits/phone → ILIKE         on a digits-only generated column, GIN trigram   §5
 2. Bounded table?    → ILIKE '%term%', no index — a sequential scan of a capped table is cheap
-3. Short text?       → the default (§2)                                                         §6
-                       typo-tolerant → also term <% col, ordered by word distance                §6
-4. Long text?        submitted search   → full-text                                             §7
+3. Short text?       → the default (§2)                                                         §7
+                       typo-tolerant → also term <% col, ordered by word distance                §8
+4. Long text?        submitted search   → full-text                                             §9
                      search-as-you-type → full-text cannot match partial words: search a short
                                           field with trigram instead, or accept whole words
 5. Meaning, not      → pgvector, only if an embedding pipeline already exists;
-   words?              combine with full-text by Reciprocal Rank Fusion                         §8, §9
+   words?              combine with full-text by Reciprocal Rank Fusion                        §10, §11
 ```
 
 - **One box over several fields:** `OR` the per-field predicates — each field keeps its own index.
 - **One box for identifiers and text:** classify the term first, then search only the matching
-  fields (§9.1).
+  fields (§11.1).
 - **Today's row count never decides.** A growing table that is small now gets its index from the
-  start — on an empty table it costs nothing, and later it needs a concurrent build (§10.4).
+  start — on an empty table it costs nothing, and later it needs a concurrent build (§12.3).
 
 ## 5. Prepare the table
 
@@ -108,7 +111,68 @@ lightest technique that meets the facts.
 **Check after real traffic:** an index with `idx_scan = 0` in `pg_stat_user_indexes` (or an old
 `last_idx_scan`) is never used. Drop it — it costs every write.
 
-## 6. Trigram (`pg_trgm`)
+## 6. Rules for every search
+
+1. **Search and filters in one `WHERE`, in one query.** Filtering in Python makes the total wrong.
+2. **`escape_like()` on every `LIKE` / `ILIKE` term.** Backslash is PostgreSQL's default escape.
+3. **Never format user input into SQL or tsquery text** — bind it.
+4. **The query's expression is the index's expression.** An index on `lower(code)` serves only
+   `lower(code) LIKE …`.
+5. **`ORDER BY` ends with `id`**, or pages repeat and skip rows.
+6. **Bound the term** with `max_length`.
+7. **Prove the index is usable, then let the planner choose.** On a test table, run
+   `SET enable_seqscan = off` and `EXPLAIN` — the index name must appear; if it does not, the query
+   and index expressions differ (rule 4). Without that setting the planner may still pick a
+   sequential scan when it estimates one is cheaper — on 60 000 short rows it did for `ILIKE`. That
+   is its call to make; judge speed with `EXPLAIN ANALYZE` on production-sized data.
+8. **After `pg_upgrade` to 18 or later** on an ICU or builtin collation provider, reindex the
+   full-text and trigram indexes.
+
+## 7. Build the default
+
+The list-endpoint plumbing is `docs/PROJECT_CONVENTIONS.md` §10. The default search adds three
+pieces.
+
+### 7.1 Model — the indexes
+
+Declare every search index on the model, so autogenerate and `alembic check` see it.
+
+```python
+class Customer(Base):
+    __tablename__ = "customers"
+    __table_args__ = (
+        # The default: one GIN trigram index per searched short-text field
+        Index("ix_customers_name_trgm", "name",
+              postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
+        Index("ix_customers_email_trgm", "email",
+              postgresql_using="gin", postgresql_ops={"email": "gin_trgm_ops"}),
+    )
+```
+
+Autogenerate renders these indexes, and every one in §12.1, as written here, and `alembic check`
+then reports nothing. It never renders the extension: the first trigram index's migration adds
+`op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")` before it, and `downgrade` leaves the
+extension, since other tables may use it.
+
+### 7.2 `list_params.py`
+
+```python
+search: str | None = Field(None, min_length=3, max_length=100)     # min_length: trigram, §8
+sort_by: Literal["relevance", "created_at", "name"] | None = None  # "relevance" only if ranked
+```
+
+### 7.3 CRUD — the predicate goes in the same `filters` list
+
+```python
+if search:
+    pattern = f"%{escape_like(search.strip())}%"
+    filters.append(or_(Customer.name.ilike(pattern), Customer.email.ilike(pattern)))
+```
+
+The route and service stay unchanged: the route binds `Annotated[XListParams, Query()]`, the
+service passes `params` through.
+
+## 8. Trigram (`pg_trgm`)
 
 - **Index the plain column:** `GIN (name gin_trgm_ops)`. It serves `LIKE`, `ILIKE`, `~`, `~*` and
   the similarity operators. Trigrams are case-insensitive, so `lower()` adds nothing for `ILIKE`.
@@ -136,7 +200,7 @@ lightest technique that meets the facts.
 - **Enable once per database:** `CREATE EXTENSION IF NOT EXISTS pg_trgm`. It is a trusted
   extension — a user with `CREATE` on the database installs it without superuser.
 
-## 7. Full-text
+## 9. Full-text
 
 - **Store the vector:** a generated column `GENERATED ALWAYS AS (to_tsvector('simple', …)) STORED`
   with a GIN index. It is faster than an expression index, which must recompute `to_tsvector` to
@@ -161,7 +225,7 @@ lightest technique that meets the facts.
 - **`ts_headline` (snippets)** reads the original text, so it is slow: run it on the returned page
   only. Its output is not HTML-safe.
 
-## 8. Vector (`pgvector`)
+## 10. Vector (`pgvector`)
 
 Only when an embedding pipeline already exists — the embeddings are the expensive part.
 
@@ -174,9 +238,9 @@ Only when an embedding pipeline already exists — the embeddings are the expens
   to length 1.
 - **Index limits:** `vector` up to 2,000 dimensions, `halfvec` up to 4,000.
 
-## 9. Mixed input and combined ranking
+## 11. Mixed input and combined ranking
 
-### 9.1 Classify the term
+### 11.1 Classify the term
 
 ```python
 def classify(term: str) -> str:
@@ -190,7 +254,7 @@ def classify(term: str) -> str:
 
 Fit the patterns to the module's real formats; the classifier belongs in CRUD.
 
-### 9.2 Combine ranks — never add raw scores
+### 11.2 Combine ranks — never add raw scores
 
 Scores from different techniques are on different scales, so adding them lets one dominate.
 
@@ -201,22 +265,16 @@ Scores from different techniques are on different scales, so adding them lets on
   `Σ 1 / (k + rank)` across the lists, with `k = 60`, the constant from the original RRF paper.
   Run each search as a CTE with `row_number()`, then `FULL OUTER JOIN` on id.
 
-## 10. Build it in this codebase
+## 12. Build the steps beyond the default
 
-The list-endpoint plumbing is `docs/PROJECT_CONVENTIONS.md` §10. Search adds the following. Each
-piece below is needed only when §4 chose its technique.
+Each piece below is needed only when §4 chose its technique. It extends §7.
 
-### 10.1 Model — indexes and generated columns
-
-Declare every search index on the model, so autogenerate and `alembic check` see it.
+### 12.1 Model — generated columns and more indexes
 
 ```python
 class Customer(Base):
-    __tablename__ = "customers"
     __table_args__ = (
-        # The default: one GIN trigram index per searched short-text field
-        Index("ix_customers_name_trgm", "name",
-              postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
+        ...,  # the default indexes, §7.1
         # Phone search: trigram on the digits-only generated column
         Index("ix_customers_phone_digits_trgm", "phone_digits",
               postgresql_using="gin", postgresql_ops={"phone_digits": "gin_trgm_ops"}),
@@ -239,32 +297,13 @@ Index("ix_customers_code_prefix", func.lower(Customer.code).label("code_lower"),
       postgresql_ops={"code_lower": "text_pattern_ops"})
 ```
 
-Autogenerate renders all four indexes and both generated columns as written here, and `alembic
-check` then reports nothing. It never renders the extension: the first trigram index's migration
-adds `op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")` before it, and `downgrade` leaves the
-extension, since other tables may use it.
-
-### 10.2 `list_params.py`
-
-```python
-search: str | None = Field(None, min_length=3, max_length=100)     # min_length: trigram, §6
-sort_by: Literal["relevance", "created_at", "name"] | None = None  # "relevance" only if ranked
-```
-
-### 10.3 CRUD — the predicate goes in the same `filters` list
-
-The default:
-
-```python
-if search:
-    pattern = f"%{escape_like(search.strip())}%"
-    filters.append(or_(Customer.name.ilike(pattern), Customer.email.ilike(pattern)))
-```
-
-The steps beyond it:
+### 12.2 CRUD — typo tolerance, prefixes, full-text, relevance
 
 ```python
 term = search.strip()
+rank = None  # set by the ranked option you keep
+
+# Each block below is one option: keep only the ones §4 chose.
 
 # Typo-tolerant name — same GIN index; word distance, lower is better
 filters.append(or_(Customer.name.ilike(pattern), literal(term).bool_op("<%")(Customer.name)))
@@ -292,10 +331,7 @@ else:
     order_clauses = [col.asc() if sort_order == "asc" else col.desc(), Customer.id.desc()]
 ```
 
-The route and service stay unchanged: the route binds `Annotated[XListParams, Query()]`, the
-service passes `params` through.
-
-### 10.4 Index builds on a live table
+### 12.3 Index builds on a live table
 
 A plain `CREATE INDEX` blocks writes for the whole build. On a large table already in production,
 build it `CONCURRENTLY` — which cannot run in a transaction:
@@ -307,23 +343,6 @@ with op.get_context().autocommit_block():   # commits everything before it
 
 A failed concurrent build leaves an `INVALID` index that still slows writes: drop it and retry.
 GIN builds are sensitive to `maintenance_work_mem`.
-
-## 11. Rules for every search
-
-1. **Search and filters in one `WHERE`, in one query.** Filtering in Python makes the total wrong.
-2. **`escape_like()` on every `LIKE` / `ILIKE` term.** Backslash is PostgreSQL's default escape.
-3. **Never format user input into SQL or tsquery text** — bind it.
-4. **The query's expression is the index's expression.** An index on `lower(code)` serves only
-   `lower(code) LIKE …`.
-5. **`ORDER BY` ends with `id`**, or pages repeat and skip rows.
-6. **Bound the term** with `max_length`.
-7. **Prove the index is usable, then let the planner choose.** On a test table, run
-   `SET enable_seqscan = off` and `EXPLAIN` — the index name must appear; if it does not, the query
-   and index expressions differ (rule 4). Without that setting the planner may still pick a
-   sequential scan when it estimates one is cheaper — on 60 000 short rows it did for `ILIKE`. That
-   is its call to make; judge speed with `EXPLAIN ANALYZE` on production-sized data.
-8. **After `pg_upgrade` to 18 or later** on an ICU or builtin collation provider, reindex the
-   full-text and trigram indexes.
 
 ## Sources
 

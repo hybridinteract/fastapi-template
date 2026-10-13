@@ -1,9 +1,21 @@
 ---
 name: review-module
 description: Review a module against the project's conventions before a PR. Use when asked to review a module, check code against the conventions, prepare a pull request, or verify a module was built correctly.
+argument-hint: <module>
+context: fork
+background: false
 ---
 
 # Review a module
+
+You run as a sub-agent: you cannot see the conversation or ask the user anything. The module to
+review: `$ARGUMENTS`. If that is empty, review each module this branch changes:
+
+```bash
+git diff --name-only --diff-filter=d main...HEAD -- 'app/*/*' | cut -d/ -f2 | sort -u | grep -vxE 'core|apis'
+```
+
+Your report is all the caller sees, so follow §8 exactly.
 
 Run the mechanical checks first — they are faster than reading, and they cover the four
 rules that fail silently. Then read for the things no test can see.
@@ -34,8 +46,8 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 | **Composite** | one bounded context, ≥2 sub-domains | Root `__init__.py` exports **nothing** and declares the rank · **one** `dependencies.py`, `tests/`, `README.md` at the root · `tests/test_module_boundary.py` exists and is not weakened |
 | **Shared kernel** | business primitives, no HTTP | No routes, no models, no `dependencies.py`, no migration · `exceptions.py` raises `ValueError`, not `HTTPException` · a route here means it should have been a domain module |
 
-- **`README.md` names the shape and the step that chose it.** If it does not, ask
-  the author which step decided — the answer is often "nobody chose, it just grew".
+- **`README.md` names the shape and the step that chose it.** If it does not, report it and put
+  the question to the author: which step decided? The answer is often "nobody chose, it just grew".
 - **These stay flat in every shape:** `dependencies.py`, `exceptions.py`, `enums.py`,
   `list_params.py`, `tasks.py`. A folder named for one of them is a finding.
 - **A folder holding one file is not a finding.** It is the documented starting shape.
@@ -68,7 +80,8 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 - Enums declared with `values_callable`.
 - Timestamps use `utc_now()`, not `datetime.utcnow()`.
 - Relationships load explicitly via `selectinload` in a dedicated `get_with_relations`.
-- The migration's `downgrade()` has actually been run. Ask; do not assume.
+- The migration's `downgrade()` has actually been run. You cannot know that from the code, so list
+  it as a question for the author; do not assume.
 - A new `SQLEnum` has an explicit `CREATE TYPE` / `DROP TYPE`.
 - A `search` field is the default from `app/core/crud/docs/search-strategy.md` §2 or has a named
   reason for more, has the index its technique needs, uses that index's exact expression in the

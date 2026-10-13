@@ -9,13 +9,15 @@ Pick the search technique **per field, from facts**, prepare the table for it, t
 **Start with the default and step up only for a reason you can name** — most endpoints never need
 more than the default.
 
-This skill is the procedure. `app/core/crud/docs/search-strategy.md` ("the guide") owns the
-trade-offs, the decision and the code. **Read the guide in full before deciding** — it is short.
-The list-endpoint plumbing is `docs/PROJECT_CONVENTIONS.md` §10; `app/activity/` is its example.
+`app/core/crud/docs/search-strategy.md` ("the guide") owns the trade-offs, the decision and the
+code. **Read the guide's §1–§7 now** — terms, the default, the techniques, the decision, table
+preparation, the rules and the default's code. That is all a default search needs. The
+list-endpoint plumbing (`ListParams`, `get_list_filtered`, `paginated_select`) is
+`docs/PROJECT_CONVENTIONS.md` §10.
 
 ## 1. Collect the facts — read the code first, ask only for the rest
 
-The guide's §1 defines every term below.
+The terms below are defined in the guide's §1.
 
 | Fact | Read it from | Ask when |
 |---|---|---|
@@ -34,8 +36,8 @@ one-word reply settles it. Do not ask what the code already answers.
 
 ## 2. Decide
 
-Walk the guide's §4 per field, starting from the default in §2. Any step past the default needs
-the reason from §2's table.
+Walk the guide's decision (§4) for each field, starting from the default (§2). Any step past the
+default needs one of the reasons in the §2 table.
 
 ## 3. Say what you chose before writing code
 
@@ -46,29 +48,24 @@ heading in the module's `README.md` — the code shows what was chosen, not why.
 
 ## 4. Build it
 
-1. **Prepare the table** — guide §5, the *Do* list only. The *Do not* list waits for a
+1. **Prepare the table** — the *Do* list in the guide's §5. Its *Do not* list waits for a
    measurement.
-2. **Model** — the indexes and generated columns, as in guide §10.1.
-3. **`list_params.py`** — guide §10.2.
-4. **CRUD** — guide §10.3: the predicate in the same `filters` list as every other filter,
-   `escape_like()` on every `LIKE` / `ILIKE`, relevance as the default sort when ranked.
-5. **Service and route** — unchanged. No search logic in either.
-6. **Migration** — `/new-migration`. Autogenerate renders the indexes; add
-   `CREATE EXTENSION IF NOT EXISTS pg_trgm` by hand before the first trigram index. A table already
-   large in production builds its index concurrently — guide §10.4.
-7. **Tests** — an `integration` file: the search finds the right rows; search plus a filter gives
+2. **The default** — the guide's §7: the model's indexes, `list_params.py`, the CRUD predicate.
+3. **Each step beyond the default** — read its technique section, then its code in §12: trigram typo
+   tolerance §8, full-text §9, vector §10, mixed input or combined ranking §11.
+4. **Service and route** — unchanged. No search logic in either.
+5. **Migration** — `/new-migration`. Add `CREATE EXTENSION IF NOT EXISTS pg_trgm` by hand before the
+   first trigram index; autogenerate never renders it. On a table already large in production,
+   build the index concurrently (§12.3).
+6. **Tests** — an `integration` file: the search finds the right rows; search plus a filter gives
    the right total; `%` and `_` in the term match literally; a typo matches if you chose typo
-   tolerance — use one the guide's §6 says trigrams forgive.
-8. **Prove each index is usable** — guide §11 rule 7.
+   tolerance — pick one that §8 lists as forgiven.
 
 ## 5. Check before you finish
 
-- [ ] Each searched field is the default or has a named reason for more (guide §2)
-- [ ] Every index the technique needs exists, and the query uses its exact expression
-- [ ] Filters that narrow the list have B-tree indexes; nothing from §5's *Do not* list was added
-- [ ] Search and filters sit in one `WHERE`, in one query
-- [ ] `escape_like()` on every `ILIKE`; `websearch_to_tsquery` for every user-typed tsquery
-- [ ] `ORDER BY` ends with `id`; no search logic in the route or service
+- [ ] Each searched field is the default, or has a reason from the guide's §2 table
+- [ ] The guide's §5 *Do* list is done, and nothing from its *Do not* list was added
+- [ ] Every rule in the guide's §6 holds — check them one by one
 - [ ] The module's README says what was chosen and why
 - [ ] The migration was upgraded **and** downgraded, and `alembic check` reports nothing
 
