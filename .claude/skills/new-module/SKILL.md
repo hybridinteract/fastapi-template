@@ -153,6 +153,8 @@ service or CRUD file, so read what it says rather than guessing:
 - **Routes never touch CRUD** and never build a raw `HTTPException`.
 - Every route dependency is an `Annotated` alias declared in `dependencies.py`.
 - A query-params model binds as `Annotated[XListParams, Query()]` — **never `Depends()`**.
+- A list endpoint with a `search` field: choose its technique and index with `/search-endpoint`
+  before writing the CRUD. An `ilike('%term%')` with no index is right only for a bounded table.
 - A model relationship naming a class in another sibling file is a string: import the target under
   `if TYPE_CHECKING:` so `ruff` and a reader can resolve it.
 

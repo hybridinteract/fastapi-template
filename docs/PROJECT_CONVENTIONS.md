@@ -673,6 +673,9 @@ class LeadListParams(ListParams):
     status: Optional[str] = None
 ```
 
+**A `search` field needs a technique and an index chosen for it** — the `search-endpoint` skill
+walks the choice. An `ilike('%term%')` with no index is right only for a bounded table.
+
 Narrow `sort_by` with a `Literal[...]` of the columns the resource actually allows sorting
 by — not a `str` and not an `Enum`. OpenAPI renders it as a typed dropdown, and an invalid
 column is rejected as a 422 at the route layer instead of being silently mapped to the

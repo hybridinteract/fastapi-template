@@ -70,6 +70,9 @@ are reviewing only, and **do not bulk-fix unrelated ones inside a feature change
 - Relationships load explicitly via `selectinload` in a dedicated `get_with_relations`.
 - The migration's `downgrade()` has actually been run. Ask; do not assume.
 - A new `SQLEnum` has an explicit `CREATE TYPE` / `DROP TYPE`.
+- A `search` field is the default from `app/core/crud/docs/search-strategy.md` §2 or has a named
+  reason for more, has the index its technique needs, uses that index's exact expression in the
+  query, and sits in the same `WHERE` as the filters.
 
 ## 6. Placement
 

@@ -1,655 +1,350 @@
-# PostgreSQL Search Strategy — Decision Guide
+# Search — choosing the technique and preparing the table
 
-> Authoritative reference for choosing search techniques in enterprise endpoints.  
-> All strategies assume PostgreSQL ≥ 14, async SQLAlchemy 2.0, FastAPI.
+> Owns the trade-offs for every search on a list or GET endpoint. To design one step by step, use
+> the `search-endpoint` skill (`.claude/skills/search-endpoint/SKILL.md`), which applies this guide.
+> Last verified against the code: 13 October 2026 — and against the PostgreSQL 18 and pgvector
+> 0.8.7 docs. Everything here also works on PostgreSQL 16, which the app runs: the §10 examples, the
+> index plans and the scores in §6 were checked on PostgreSQL 16.14 with SQLAlchemy 2.0.54 and
+> Alembic 1.20. Sources are at the end.
 
-- This is version 0.1 - Iteratively improving based on real-world application and feedback.
+## 1. Terms
 
----
-
-## Table of Contents
-
-1. [The Four Techniques — Quick Comparison](#1-the-four-techniques--quick-comparison)
-2. [Decision Tree — Which Technique to Use](#2-decision-tree--which-technique-to-use)
-3. [Endpoint Archetype Map](#3-endpoint-archetype-map)
-4. [Full-Text Search — The Three Sub-Decisions](#4-full-text-search--the-three-sub-decisions)
-5. [Filter + Search Sync (Critical Rule)](#5-filter--search-sync-critical-rule)
-6. [Indexing Strategy](#6-indexing-strategy)
-7. [Implementation Patterns](#7-implementation-patterns)
-8. [When to Apply Each Technique](#8-when-to-apply-each-technique)
-9. [Migration Checklist](#9-migration-checklist)
-10. [Anti-Patterns to Avoid](#10-anti-patterns-to-avoid)
-
----
-
-## 1. The Four Techniques — Quick Comparison
-
-PostgreSQL exposes four distinct search mechanisms. Each is optimal for a
-specific class of query. **Do not reach for a heavier technique when a lighter
-one is sufficient.**
-
-| # | Technique | PG Feature | GIN/GiST? | Handles typos? | Ranks results? | Setup cost |
-|---|---|---|---|---|---|---|
-| 1 | **Prefix / substring match** | `iLIKE '%term%'` | Via pg_trgm | ❌ | ❌ | Lowest |
-| 2 | **Trigram similarity** | `pg_trgm` `%`, `similarity()` | GIN / GiST | ✅ | Similarity score | Low |
-| 3 | **Full-text search (FTS)** | `tsvector` / `tsquery` | GIN | ❌ (stems words) | `ts_rank_cd` | Medium |
-| 4 | **Vector / semantic search** | `pgvector` | HNSW / IVFFlat | ✅ (conceptual) | Cosine distance | High (LLM needed) |
-
-### When each is correct
-
-| Technique | Use when |
+| Term | Means |
 |---|---|
-| **iLIKE** | Exact/near-exact values — codes, emails, short names. Clean data, no typos expected. |
-| **Trigram (pg_trgm)** | Users type partial strings or make minor typos. Names, short labels, addresses. |
-| **FTS** | Long-form content (notes, descriptions, comments). Ranked relevance required. |
-| **pgvector** | Semantic/intent search where keywords won't match. Requires an embedding pipeline. |
+| **Term** | The raw string the user typed |
+| **Short text** | A value of a few words: name, title, email, label |
+| **Long text** | Prose: description, notes, body, comment |
+| **Identifier** | A value with a known format: code, SKU, invoice number, phone |
+| **Bounded table** | Its row count is capped by the business (departments, currencies, roles), not by use |
+| **Growing table** | Every other table — including one that is small today |
+| **Search-as-you-type** | Results refresh on each keystroke, so the term is often a partial word |
+| **Submitted search** | The user types whole words and presses Enter |
+| **Typo-tolerant** | "jonathon" finds "Jonathan" — see §6 for what trigrams can and cannot forgive |
+| **Ranked** | Ordered by how well each row matches, not by a column |
 
----
+## 2. Start simple
 
-## 2. Decision Tree — Which Technique to Use
+**The default search** — what most list endpoints need, and the industry-standard first step:
 
-Start from the top. Stop at the first match.
+- `ILIKE '%term%'` on each short-text field the search box covers, `OR`-ed together;
+- one GIN trigram index per field (§6);
+- `escape_like()` on the term, `min_length=3`, `max_length=100`;
+- no ranking — the endpoint's normal sort.
 
-```
-Is the searched value a structured identifier?
-(phone number, patient ID, SKU, code, email)
-    ↓ YES
-    → Use iLIKE prefix + B-tree index
-      (digits-only: normalize the column; IDs: exact iLIKE prefix)
+Go beyond it one step at a time, and only for a reason you can name:
 
-Is the table small (< 5 000 rows) and the search box is simple?
-    ↓ YES
-    → Plain iLIKE '%term%' — no index needed, seq scan is fast enough
-
-Is the text short (< ~10 words: names, short titles, labels)?
-Does the user expect fuzzy / typo-tolerant matching?
-    ↓ YES
-    → Trigram (pg_trgm GIN) + iLIKE (pg_trgm GIN also accelerates iLIKE)
-
-Is the text long-form content (descriptions, notes, comments)?
-Must results be ranked by relevance?
-    ↓ YES
-    → Full-text search (GIN on stored tsvector column)
-      + trigram fallback for typo tolerance (hybrid)
-
-Does the search need to understand meaning / intent
-beyond keywords? (clinical summaries, semantic product search)
-    ↓ YES
-    → Vector search (pgvector) — only if embedding pipeline exists
-```
-
-### Condensed recommendation for 95 % of endpoints
-
-| Search box type | Recommended approach |
+| Add | Only when |
 |---|---|
-| Name / short label field | **Trigram GIN** — `name.ilike('%term%')` accelerated by `gin_trgm_ops` |
-| Code / ID / phone | **iLIKE prefix** on normalized column + B-tree (or trigram GIN for substring) |
-| Multi-field (name + email + phone) | **Trigram GIN** on each column |
-| Long text / description / notes | **FTS** — stored `tsvector` + GIN index |
-| Mixed (short name + long description, ranked) | **Hybrid** — FTS for ranking + trigram fallback for typos |
-| Semantic / intent search | **pgvector** — only when an embedding pipeline exists |
+| Typo tolerance (`<%`) | The field holds names or labels people type from memory |
+| Full-text | Long text must be searched, or results must be ranked |
+| Full-text + trigram in one box | Both rows above apply to one search box |
+| Vector | Users search by meaning, and an embedding pipeline already exists |
+| A partial or multicolumn index, GiST | `EXPLAIN ANALYZE` on real data shows the plain indexes are not enough (§5) |
+| `setweight`, `ts_headline`, input classification | The feature asks for it |
 
----
+## 3. The techniques
 
-## 3. Endpoint Archetype Map
+| Technique | Predicate | Index | Partial words | Typos | Ranks |
+|---|---|---|---|---|---|
+| Exact | `col = term` | B-tree | — | No | No |
+| Prefix | `col LIKE 'term%'` | B-tree `text_pattern_ops` | Start only | No | No |
+| Substring | `col ILIKE '%term%'` | GIN `gin_trgm_ops` | Yes | No | No |
+| Trigram similarity | `term <% col` | GIN `gin_trgm_ops` | Yes | **Yes** | Yes — word distance |
+| Full-text | `vector @@ websearch_to_tsquery(cfg, term)` | GIN on a stored `tsvector` | **No** — whole words | No | Yes — `ts_rank_cd` |
+| Vector | `embedding <=> query_embedding` | HNSW | — | Meaning | Yes — distance |
 
-The following archetypes cover the endpoints found in enterprise management
-software. Pick the matching row and follow the prescribed approach.
+Every index slows every insert and update on its table, for the life of the table. Choose the
+lightest technique that meets the facts.
 
-### 3.1 Lookup / admin list (employees, products, users)
+## 4. Decide — per field, first match wins
 
-**Typical search:** "Find employee by name or code"  
-**Data:** Short strings, clean, rarely changes.  
-**Approach:** `iLIKE '%term%'` on `name` + `code` columns, accelerated by
-`GIN (col gin_trgm_ops)`.  
-**Rank needed?** No — alphabetical or created_at sort is sufficient.
-
-```sql
--- Migration
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX ix_employees_name_trgm  ON employees USING GIN (lower(name) gin_trgm_ops);
-CREATE INDEX ix_employees_code_trgm  ON employees USING GIN (lower(employee_code) gin_trgm_ops);
 ```
+1. Identifier?       exact match  → =             B-tree (often the unique constraint you already have)
+                     starts-with  → LIKE 'term%'  on lower(col), B-tree text_pattern_ops          §10.1
+                     digits/phone → ILIKE         on a digits-only generated column, GIN trigram   §5
+2. Bounded table?    → ILIKE '%term%', no index — a sequential scan of a capped table is cheap
+3. Short text?       → the default (§2)                                                         §6
+                       typo-tolerant → also term <% col, ordered by word distance                §6
+4. Long text?        submitted search   → full-text                                             §7
+                     search-as-you-type → full-text cannot match partial words: search a short
+                                          field with trigram instead, or accept whole words
+5. Meaning, not      → pgvector, only if an embedding pipeline already exists;
+   words?              combine with full-text by Reciprocal Rank Fusion                         §8, §9
+```
+
+- **One box over several fields:** `OR` the per-field predicates — each field keeps its own index.
+- **One box for identifiers and text:** classify the term first, then search only the matching
+  fields (§9.1).
+- **Today's row count never decides.** A growing table that is small now gets its index from the
+  start — on an empty table it costs nothing, and later it needs a concurrent build (§10.4).
+
+## 5. Prepare the table
+
+**Do — in the migration that adds the table or column:**
+
+1. **One index per searched field**, of the type its technique needs (§3).
+2. **A B-tree on each filter that narrows the list to a small share of rows** — a foreign key, an
+   owner, a date range. Foreign keys first: PostgreSQL never indexes the referencing column for
+   you. Keep them single-column — the planner combines them with the search index (bitmap `AND`).
+3. **Normalise loosely typed identifiers into one stored form.** A phone becomes a digits-only
+   generated column (`GENERATED ALWAYS AS (…) STORED`), which never drifts from its source; a code
+   is matched through an index on `lower(code)`.
+4. **A derived search target is a stored generated column** — a digits-only phone, a `tsvector` —
+   never computed inside the query, where it cannot use an index.
+5. **`ANALYZE` the table after a bulk load or backfill.** The planner chooses indexes from
+   statistics; autovacuum keeps them current otherwise.
+
+**Do not — until `EXPLAIN ANALYZE` on real data asks for it:**
+
+- **An index on a low-selectivity column** (a status, a boolean). A value matching more than a few
+  percent of rows is read by a sequential scan anyway.
+- **A multicolumn index.** The docs say to use them sparingly; when one is needed, the equality
+  filter leads.
+- **A partial index** (`WHERE is_deleted = false`). It helps only when the excluded rows are a large
+  share, and only queries that state the same condition literally use it — a bound parameter never
+  does.
+- **GiST, `siglen`, `fastupdate` tuning, partitioning.**
+
+**Check after real traffic:** an index with `idx_scan = 0` in `pg_stat_user_indexes` (or an old
+`last_idx_scan`) is never used. Drop it — it costs every write.
+
+## 6. Trigram (`pg_trgm`)
+
+- **Index the plain column:** `GIN (name gin_trgm_ops)`. It serves `LIKE`, `ILIKE`, `~`, `~*` and
+  the similarity operators. Trigrams are case-insensitive, so `lower()` adds nothing for `ILIKE`.
+- **Under three characters, the index cannot help.** A pattern with no extractable trigram becomes
+  a full-index scan — hence `min_length=3` on a growing table.
+- **Only the operators use the index.** `similarity(a, b) > 0.3` in a `WHERE` reads every row; write
+  `a % b` or `term <% col`.
+- **`<%` is the search-box operator.** `%` compares whole strings (`similarity`, threshold 0.3), so a
+  short term against a long value scores low. `<%` compares the term with the best-matching stretch
+  of the value (`word_similarity`, threshold 0.6). `<<%` also aligns to word boundaries
+  (`strict_word_similarity`, threshold 0.5).
+- **Thresholds are settings, not predicates:** `SET LOCAL pg_trgm.word_similarity_threshold = 0.5`
+  inside the transaction.
+- **What trigram typo tolerance catches**, measured with `word_similarity` at the default 0.6: one
+  missing, extra or wrong letter in a longer word (`jonathon` → "Jonathan Smith" 0.67, `alexandr`
+  → "Alexander Grant" 0.78). It misses swapped letters in a short word (`jhon` → "John Smith"
+  0.20, `smiht` 0.50) and sound-alikes (`smyth` 0.33). Lowering the threshold to 0.5 catches more
+  and returns more noise. Sound-alike names need `fuzzystrmatch` (`dmetaphone`) — beyond trigram.
+- **Order typo-tolerant results by word distance:** `term <<-> col` (`1 − word_similarity`), lowest
+  first.
+- **Punctuation is ignored** when trigrams are extracted — `foo|bar` indexes like `foo bar`. That is
+  why phones get their own digits-only column (§5).
+- **GIN by default.** GiST only for index-ordered nearest-match (`ORDER BY col <-> term LIMIT n` —
+  GIN cannot order by distance), or when write cost is the measured bottleneck.
+- **Enable once per database:** `CREATE EXTENSION IF NOT EXISTS pg_trgm`. It is a trusted
+  extension — a user with `CREATE` on the database installs it without superuser.
+
+## 7. Full-text
+
+- **Store the vector:** a generated column `GENERATED ALWAYS AS (to_tsvector('simple', …)) STORED`
+  with a GIN index. It is faster than an expression index, which must recompute `to_tsvector` to
+  recheck matches.
+- **Always pass the configuration** — `to_tsvector('simple', …)`. The one-argument form depends on
+  `default_text_search_config`, so it cannot be indexed or generated.
+- **`coalesce()` every column** in the vector. One `NULL` makes the whole vector `NULL`.
+- **Configuration:** `'simple'` — no stemming, no stop words — for names, codes and mixed-language
+  data. `'english'` for English prose, where "running" should find "run". **The query uses the
+  vector's configuration.**
+- **Parser:** `websearch_to_tsquery` for every user-typed term. It never raises; it reads
+  `"a phrase"`, `OR` and `-word`, and ignores other punctuation — so it has no prefix match.
+  `to_tsquery` raises on bad syntax: never pass it user input. SQLAlchemy's `col.match()` emits
+  `plainto_tsquery`; use `col.bool_op("@@")(func.websearch_to_tsquery(cfg, term))`.
+- **Rank with `ts_rank_cd`** (cover density — near terms rank higher). It needs positions: on a
+  stripped `tsvector` it returns 0. Normalisation `32` scales the rank into 0–1.
+- **Weights only when one field outranks another:** `setweight(…, 'A')` for the title, `'B'`–`'D'`
+  for the rest (default weights 1.0 / 0.4 / 0.2 / 0.1). GIN stores no weights, so a weighted query
+  rechecks rows.
+- **Ranking reads every matching row** before `LIMIT`. A broad term on a large table is slow —
+  keep the endpoint's filters in the same `WHERE`.
+- **`ts_headline` (snippets)** reads the original text, so it is slow: run it on the returned page
+  only. Its output is not HTML-safe.
+
+## 8. Vector (`pgvector`)
+
+Only when an embedding pipeline already exists — the embeddings are the expensive part.
+
+- **HNSW by default:** better speed–recall than IVFFlat, and buildable on an empty table. IVFFlat
+  builds faster and uses less memory, but must be created after the table has data.
+- **Filters apply after the index scan.** With the default `hnsw.ef_search` of 40 and a filter that
+  keeps 10 % of rows, about 4 rows come back. Use iterative scans (pgvector ≥ 0.8:
+  `SET LOCAL hnsw.iterative_scan = relaxed_order`), a partial index, or partitioning.
+- **Operator:** `<=>` cosine distance; `<#>` (negative inner product) when embeddings are normalised
+  to length 1.
+- **Index limits:** `vector` up to 2,000 dimensions, `halfvec` up to 4,000.
+
+## 9. Mixed input and combined ranking
+
+### 9.1 Classify the term
 
 ```python
-# CRUD
-from app.core.utils import escape_like
-
-term = f"%{escape_like(search.lower())}%"
-filters.append(or_(
-    func.lower(Employee.name).ilike(term),
-    func.lower(Employee.employee_code).ilike(term),
-))
+def classify(term: str) -> str:
+    t = term.strip()
+    if re.fullmatch(r"[A-Za-z]{1,4}-?\d+", t):
+        return "identifier"                      # C0042, INV-001
+    if re.fullmatch(r"[\d\s()+.-]+", t) and len(re.sub(r"\D", "", t)) >= 6:
+        return "phone"
+    return "text"
 ```
 
-### 3.2 CRM entity search (leads, customers)
+Fit the patterns to the module's real formats; the classifier belongs in CRUD.
 
-**Typical search:** "Find by name, email, OR phone number"  
-**Data:** Short strings. Phone numbers need normalization.  
-**Approach:** Trigram on name/email + normalized phone column for digits.
+### 9.2 Combine ranks — never add raw scores
 
-```sql
--- Migration
-ALTER TABLE crm_leads
-    ADD COLUMN mobile_normalized TEXT GENERATED ALWAYS AS (
-        regexp_replace(mobile, '[^0-9]', '', 'g')
-    ) STORED;
+Scores from different techniques are on different scales, so adding them lets one dominate.
 
-CREATE INDEX ix_leads_mobile_norm_trgm ON crm_leads
-    USING GIN (mobile_normalized gin_trgm_ops);
-CREATE INDEX ix_leads_name_trgm ON crm_leads
-    USING GIN (lower(first_name || ' ' || last_name) gin_trgm_ops);
-CREATE INDEX ix_leads_email_trgm ON crm_leads
-    USING GIN (lower(email) gin_trgm_ops);
-```
+- **Two techniques in one query** (full-text with a trigram fallback): order by tiers —
+  `ORDER BY (vector @@ q) DESC, ts_rank_cd(vector, q) DESC, term <<-> name, id DESC`.
+  Full-text hits come first, typo-only hits after.
+- **Two separate searches** (full-text and vector): Reciprocal Rank Fusion — each row scores
+  `Σ 1 / (k + rank)` across the lists, with `k = 60`, the constant from the original RRF paper.
+  Run each search as a CTE with `row_number()`, then `FULL OUTER JOIN` on id.
+
+## 10. Build it in this codebase
+
+The list-endpoint plumbing is `docs/PROJECT_CONVENTIONS.md` §10. Search adds the following. Each
+piece below is needed only when §4 chose its technique.
+
+### 10.1 Model — indexes and generated columns
+
+Declare every search index on the model, so autogenerate and `alembic check` see it.
 
 ```python
-digits = re.sub(r'\D', '', search)
-name_col = func.lower(func.concat(Lead.first_name, ' ', Lead.last_name))
-
-filters.append(or_(
-    name_col.ilike(f"%{escape_like(search.lower())}%"),
-    func.lower(Lead.email).ilike(f"%{escape_like(search.lower())}%"),
-    column('mobile_normalized').ilike(f"%{digits}%") if digits else literal(False),
-))
-```
-
-### 3.3 Primary entity with ranked search (leads v2, patients, documents)
-
-**Typical search:** "Find by name / keyword across multiple fields, ranked"  
-**Data:** Short names + optional long notes/description.  
-**Approach:** Hybrid — FTS on `search_vector` (primary, ranked) + trigram
-fallback (tolerates misspellings).
-
-> See [§4](#4-full-text-search--the-three-sub-decisions) for the three FTS
-> sub-decisions: configuration (`'simple'` for names, `'english'` for prose),
-> query parser (`websearch_to_tsquery` for user input), and ranking
-> (`ts_rank_cd` with optional `setweight` for multi-field documents).
-
-```sql
--- Migration
-ALTER TABLE crm_leads
-    ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (
-        to_tsvector('simple',
-            coalesce(first_name, '') || ' ' ||
-            coalesce(last_name,  '') || ' ' ||
-            coalesce(email,      '') || ' ' ||
-            coalesce(mobile,     '')
-        )
-    ) STORED;
-
-CREATE INDEX ix_leads_search_vector ON crm_leads USING GIN (search_vector);
-```
-
-```python
-ts_query = func.websearch_to_tsquery('simple', search)
-name_col  = func.lower(func.concat(Lead.first_name, ' ', Lead.last_name))
-
-filters.append(or_(
-    column('search_vector').op('@@')(ts_query),
-    name_col.op('%')(search.lower()),           # trigram fallback
-))
-
-rank_expr = (
-    func.coalesce(func.ts_rank_cd(column('search_vector'), ts_query), 0.0)
-    + func.similarity(name_col, search.lower())
-)
-# Use rank_expr.desc() as the first order clause when sort_by == 'relevance'
-```
-
-### 3.4 Structured identifier lookup (SKU, invoice number, contact ID)
-
-**Typical search:** "Find by exact or partial code"  
-**Data:** Alphanumeric codes with known structure.  
-**Approach:** `iLIKE 'CODE%'` (prefix) covered by a GIN trigram index.
-For exact lookup (`= 'CODE-001'`) use a B-tree index instead.
-
-```sql
-CREATE INDEX ix_products_sku_trgm   ON products USING GIN (lower(sku) gin_trgm_ops);
-CREATE INDEX ix_invoices_number_bt  ON invoices USING BTREE (invoice_number);
-```
-
-```python
-# Prefix search — index on sku covers this
-filters.append(Product.sku.ilike(f"{escape_like(search)}%"))
-
-# OR exact lookup — btree covers this
-filters.append(Invoice.invoice_number == search.upper())
-```
-
-### 3.5 Long-text / notes / content search
-
-**Typical search:** Full sentence search across clinical notes, activity logs.  
-**Data:** Long paragraphs. Keyword ranking important.  
-**Approach:** FTS only. No trigram (too large, noisy).
-
-```sql
-ALTER TABLE clinical_notes
-    ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (
-        to_tsvector('english', coalesce(body, ''))
-    ) STORED;
-
-CREATE INDEX ix_clinical_notes_sv ON clinical_notes USING GIN (search_vector);
-```
-
-```python
-ts_query = func.websearch_to_tsquery('english', search)
-filters.append(column('search_vector').op('@@')(ts_query))
-order_clauses = [func.ts_rank_cd(column('search_vector'), ts_query).desc(), model.id.desc()]
-```
-
----
-
-## 4. Full-Text Search — The Three Sub-Decisions
-
-Once the decision tree (§2) tells you to use FTS, three sub-decisions remain.
-They are independent of each other and each has a **safe default** that
-covers the majority of enterprise endpoints. Override the default only with
-a concrete reason.
-
-### 4.1 Configuration choice — `'simple'` vs `'english'` (vs others)
-
-A text-search *configuration* drives parsing, stemming, and stop-word removal.
-The wrong choice silently breaks recall.
-
-| Configuration | Behaviour | Use when |
-|---|---|---|
-| `'simple'` | No stemming, no stop-word removal. Lowercases tokens only. | **Default for proper nouns, names, identifiers, codes, mixed-language data, multi-tenant SaaS.** Anything where a token like "Rajesh" or "acme" must match itself exactly. |
-| `'english'` | Snowball stemmer + English stop-word list. "running", "runs", "ran" → `run`; drops `the`, `is`, `on`, etc. | Long-form English content: clinical notes, product descriptions, articles, comments. |
-| `'pg_catalog.<lang>'` | Same as `'english'` but per language (`spanish`, `french`, `russian`, ...). | Single-language content where stemming meaningfully improves recall. |
-
-> **Rule.** Names, codes, identifiers, multi-language data → `'simple'` (no stemming, no stop-word removal — every token preserved verbatim).  
-> Long English prose → `'english'` (Snowball stemmer + stop-word removal improves recall for natural-language queries).  
-> When in doubt → `'simple'`.
-
-### 4.2 Query parser choice — `websearch_to_tsquery` vs alternatives
-
-PostgreSQL provides four functions to convert user input into a `tsquery`.
-Only one is appropriate for raw user input from a public endpoint.
-
-| Function | Recognises operators? | Raises on bad syntax? | Use when |
-|---|---|---|---|
-| `websearch_to_tsquery` | Quotes for phrases, `OR`, leading `-` for NOT | **Never** | **Default for every user-facing search box.** Safe with raw input. |
-| `plainto_tsquery` | None — every word becomes AND | Never | Programmatic queries where the caller, not the user, supplies plain words. |
-| `phraseto_tsquery` | None — every word becomes FOLLOWED-BY (`<->`) | Never | Exact-phrase lookups (e.g. "find this exact sentence in audit logs"). |
-| `to_tsquery` | Full operator syntax (`&`, `|`, `!`, `<->`, `:*`, weights) | **Yes** | Internal admin tools, CLI utilities. **Never** with raw HTTP input. |
-
-> **Rule.** All `/list` endpoints use `websearch_to_tsquery(config, search)`.
-> It is parameterised, injection-safe, and forgiving — three properties any
-> public endpoint requires.
-
-### 4.3 Ranking choice — `ts_rank_cd` vs `ts_rank` (and weights)
-
-| Function | Behaviour | Use |
-|---|---|---|
-| `ts_rank` | Frequency-based — ignores term proximity. | Single-field, unweighted indexes. |
-| `ts_rank_cd` | Cover density — clustered matches rank higher. | **Default** for all enterprise search endpoints. |
-
-**`setweight()` for multi-field documents.** When the `tsvector` covers several columns, assign weights so ranking favours matches in important fields (title > body):
-
-```sql
-ALTER TABLE articles ADD COLUMN search_vector tsvector
-    GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')),    'A') ||
-        setweight(to_tsvector('english', coalesce(summary, '')),  'B') ||
-        setweight(to_tsvector('english', coalesce(body, '')),     'C')
-    ) STORED;
-```
-
-Default weights are `{D=0.1, C=0.2, B=0.4, A=1.0}`. With the schema above, a
-match in `title` ranks 10× a match in `body` — the standard convention for
-any content where the title is the primary signal.
-
-> **Rule.** If your `tsvector` is built from a single column or columns of
-> equal importance, skip `setweight`. Use it only when one field clearly
-> outranks another (title > body, name > description).
-
-### 4.4 Optional: highlighting with `ts_headline`
-
-For list responses that need a snippet of the matched text (search-result
-excerpt with `<b>highlighted</b>` terms), use `ts_headline`. **Caveat from
-PostgreSQL docs:** `ts_headline` operates on the original document, not the
-`tsvector`, and is therefore expensive. Apply it **after** pagination — not
-inside the count window — and only on the page being returned.
-
-```python
-headline_expr = func.ts_headline(
-    'english',
-    Article.body,
-    func.websearch_to_tsquery('english', search),
-    'MaxFragments=2, MaxWords=20, MinWords=5',
-)
-# Add to SELECT list, not to the search predicate.
-```
-
----
-
-## 5. Filter + Search Sync (Critical Rule)
-
-**Search and filters are always AND-combined in a single WHERE clause.**  
-Never run a full-table search and then post-filter in Python.
-
-### Why this matters
-
-```
-# ❌ WRONG — search runs on full table, Python filters after
-all_results = await session.execute(select(Lead))
-matching = [r for r in all_results if search in r.name and r.status == 'active']
-
-# ❌ WRONG — two queries, search on unfiltered set
-count_q  = select(func.count()).where(search_condition)
-items_q  = select(Lead).where(filters_condition)
-
-# ✅ CORRECT — all predicates in one WHERE, single query
-base_query = select(Lead).where(
-    Lead.is_deleted.is_(False),
-    Lead.status == 'active',         # filter
-    Lead.department == 'cardiology', # filter
-    search_condition,                # search — AND-combined
-)
-items, total = await paginated_select(session, base_query, ...)
-```
-
-The PostgreSQL planner can then choose:
-- A GIN bitmap scan for the search predicate
-- A B-tree bitmap scan for `status` and `department`
-- Bitmap AND of all three results
-
-This is far more efficient than running search on an unfiltered set.
-
-### Rule summary
-
-| Rule | Reason |
-|---|---|
-| All filters + search in one `WHERE` | Single table scan; planner can combine indexes |
-| Never filter in Python after fetching | Pagination totals become incorrect |
-| `escape_like()` on every `iLIKE` parameter | Prevents `%` / `_` injection |
-| `is_(False)` / `is_(None)` for nullable booleans | Avoids SQLAlchemy ORM ambiguity |
-| Never `search_vector @@ tsquery` outside WHERE | Window function pagination requires all predicates before OFFSET/LIMIT |
-
----
-
-## 6. Indexing Strategy
-
-### 6.1 Index type selection
-
-| Data access pattern | Index type | Notes |
-|---|---|---|
-| Exact equality / range (dates, FKs, status) | **B-tree** | Default — always use for `=`, `<`, `>`, `BETWEEN` |
-| `iLIKE '%term%'` on text | **GIN** `gin_trgm_ops` | Also accelerates `~*` regex |
-| Trigram similarity (`%` operator) | **GIN** `gin_trgm_ops` | GiST if nearest-neighbour `ORDER BY dist` needed |
-| FTS match (`@@`) | **GIN** on `tsvector` column | Always GIN, never GiST for FTS |
-| Vector distance (`<->`) | **HNSW** or **IVFFlat** | pgvector extension |
-| Frequently filtered subset | **Partial B-tree** `WHERE is_deleted = false` | Smaller index, faster scans |
-
-### 6.2 GIN vs GiST — for both trigram and FTS
-
-Per PostgreSQL §12.9 (*Preferred Index Types for Text Search*) and the
-`pg_trgm` documentation, the GIN-vs-GiST trade-off applies identically to
-trigram indexes and `tsvector` indexes. The trade-offs:
-
-| Criterion | GIN | GiST |
-|---|---|---|
-| Read (lookup) speed | Faster | Slower (lossy — needs heap recheck) |
-| Write (insert/update) speed | Slower | Faster |
-| Index size | Larger | Smaller (fixed-length signatures) |
-| Nearest-neighbour sort (`ORDER BY similarity()`) | ❌ Not supported | ✅ Supported |
-| Stores weight labels (FTS) | ❌ No (recheck needed for weighted queries) | ✅ Yes |
-| **Recommended default** | ✅ Read-heavy: catalogs, CRM, articles, leads | Write-heavy: audit logs, event streams, IoT data |
-
-**Rule:** Default to **GIN**. Switch to **GiST** only when `ORDER BY similarity()` is required in SQL, or when write throughput on the indexed table is the measured bottleneck.
-
-**Always use `CREATE INDEX CONCURRENTLY` in production** — plain `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock and blocks all writes for the build duration. For very large GIN builds, raise `maintenance_work_mem` temporarily:
-
-```sql
-SET maintenance_work_mem = '1GB';
-CREATE INDEX CONCURRENTLY ix_leads_search_vector ON crm_leads USING GIN (search_vector);
-RESET maintenance_work_mem;
-```
-
-### 6.3 Standard index set for a new module
-
-```sql
--- 1. Soft-delete partial index on the primary table
-CREATE INDEX ix_{table}_active ON {table} (created_at DESC)
-    WHERE is_deleted = false;
-
--- 2. Foreign key indexes (PostgreSQL does NOT auto-create these)
-CREATE INDEX ix_{table}_{fk_col} ON {table} ({fk_col});
--- repeat for every FK column
-
--- 3. Search — name/title (GIN trigram)
-CREATE INDEX ix_{table}_name_trgm ON {table}
-    USING GIN (lower(name) gin_trgm_ops);
-
--- 4. Search — phone / mobile (GIN trigram on normalized column)
-CREATE INDEX ix_{table}_mobile_norm_trgm ON {table}
-    USING GIN (mobile_normalized gin_trgm_ops);
-
--- 5. Full-text search vector (if needed)
-CREATE INDEX ix_{table}_search_vector ON {table}
-    USING GIN (search_vector);
-
--- 6. Common filter columns (B-tree)
-CREATE INDEX ix_{table}_status       ON {table} (status)   WHERE is_deleted = false;
-CREATE INDEX ix_{table}_created_at   ON {table} (created_at DESC);
-CREATE INDEX ix_{table}_assigned_to  ON {table} (assigned_to) WHERE is_deleted = false;
-```
-
-### 6.4 Composite indexes — when and how
-
-Use composite B-tree indexes for columns that are **always queried together**:
-
-```sql
--- Correct: status + created_at queried together as a range + filter
-CREATE INDEX ix_leads_status_created ON crm_leads (status, created_at DESC)
-    WHERE is_deleted = false;
-
--- Wrong: don't composite-index rarely co-occurring columns
--- The planner cannot use partial key lookups on arbitrary column order
-```
-
-**Rule:** Left-most column in the composite index should be the highest-
-selectivity equality predicate (usually an enum like `status`).
-
-### 6.5 Generated columns for search targets
-
-Prefer **stored generated columns** over application-level computation for
-search targets. They are always consistent with the source column and never
-stale:
-
-```sql
--- Phone normalization
-ALTER TABLE contacts ADD COLUMN mobile_normalized TEXT
-    GENERATED ALWAYS AS (regexp_replace(mobile, '[^0-9]', '', 'g')) STORED;
-
--- Full-text vector
-ALTER TABLE leads ADD COLUMN search_vector tsvector
-    GENERATED ALWAYS AS (
-        to_tsvector('simple',
-            coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' ' ||
-            coalesce(email,'')      || ' ' || coalesce(mobile,'')
-        )
-    ) STORED;
-```
-
-**Important:** Generated column indices are automatically maintained by
-PostgreSQL on every INSERT and UPDATE — no trigger or application logic needed.
-
----
-
-## 7. Implementation Patterns
-
-### 7.1 Safe input handling
-
-```python
-from app.core.utils import escape_like
-
-# Always escape user input before iLIKE
-term = f"%{escape_like(search)}%"
-filters.append(Column.ilike(term))
-
-# For FTS — websearch_to_tsquery is injection-safe
-# (uses parameterised query, not string interpolation)
-ts_q = func.websearch_to_tsquery('simple', search)  # safe
-filters.append(column('search_vector').op('@@')(ts_q))
-```
-
-### 7.2 Input routing — detect token type before routing to technique
-
-```python
-import re
-
-def _classify_search_input(term: str) -> str:
-    """Classify user input to route to the optimal search path."""
-    clean = term.strip()
-    if re.fullmatch(r'[A-Z]{1,3}\d+', clean.upper()):
-        return 'identifier'          # C0042, INV-001, SKU123
-    if re.fullmatch(r'[\d\s\-+().]+', clean) and len(re.sub(r'\D', '', clean)) >= 6:
-        return 'phone'               # 9876543210, +91-98765-43210
-    return 'text'                    # everything else
-```
-
-### 7.3 Hybrid search pattern (canonical) — *use only for primary, mixed-input search boxes*
-
-```python
-search_type = _classify_search_input(search)
-
-if search_type == 'identifier':
-    filters.append(Model.code.ilike(f"{escape_like(search.upper())}%"))
-
-elif search_type == 'phone':
-    digits = re.sub(r'\D', '', search)
-    filters.append(column('mobile_normalized').ilike(f"%{digits}%"))
-
-else:
-    ts_q      = func.websearch_to_tsquery('simple', search)
-    name_col  = func.lower(func.concat(Model.first_name, ' ', Model.last_name))
-    rank_expr = (
-        func.coalesce(func.ts_rank_cd(column('search_vector'), ts_q), 0.0)
-        + func.similarity(name_col, search.lower())
+class Customer(Base):
+    __tablename__ = "customers"
+    __table_args__ = (
+        # The default: one GIN trigram index per searched short-text field
+        Index("ix_customers_name_trgm", "name",
+              postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
+        # Phone search: trigram on the digits-only generated column
+        Index("ix_customers_phone_digits_trgm", "phone_digits",
+              postgresql_using="gin", postgresql_ops={"phone_digits": "gin_trgm_ops"}),
+        # Full-text
+        Index("ix_customers_search_vector", "search_vector", postgresql_using="gin"),
     )
-    filters.append(or_(
-        column('search_vector').op('@@')(ts_q),    # FTS (GIN)
-        name_col.op('%')(search.lower()),           # trigram fallback (GIN)
-    ))
+    phone_digits: Mapped[str | None] = mapped_column(
+        Text, Computed("regexp_replace(phone, '[^0-9]', '', 'g')", persisted=True)
+    )
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(notes, ''))",
+                 persisted=True),
+        deferred=True,  # never loaded by a list query
+    )
+
+
+# Code prefix: an expression index, declared after the class where the column exists
+Index("ix_customers_code_prefix", func.lower(Customer.code).label("code_lower"),
+      postgresql_ops={"code_lower": "text_pattern_ops"})
 ```
 
-### 7.4 Relevance-ranked response
+Autogenerate renders all four indexes and both generated columns as written here, and `alembic
+check` then reports nothing. It never renders the extension: the first trigram index's migration
+adds `op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")` before it, and `downgrade` leaves the
+extension, since other tables may use it.
+
+### 10.2 `list_params.py`
 
 ```python
-# Route layer: derive sort_by from context
-effective_sort_by = params.sort_by.value if params.sort_by else (
-    'relevance' if params.search else 'created_at'
-)
+search: str | None = Field(None, min_length=3, max_length=100)     # min_length: trigram, §6
+sort_by: Literal["relevance", "created_at", "name"] | None = None  # "relevance" only if ranked
+```
 
-# CRUD layer: use rank_expr as primary ORDER BY
-if effective_sort_by == 'relevance' and rank_expr is not None:
-    order_clauses = [rank_expr.desc(), Model.created_at.desc(), Model.id.desc()]
+### 10.3 CRUD — the predicate goes in the same `filters` list
+
+The default:
+
+```python
+if search:
+    pattern = f"%{escape_like(search.strip())}%"
+    filters.append(or_(Customer.name.ilike(pattern), Customer.email.ilike(pattern)))
+```
+
+The steps beyond it:
+
+```python
+term = search.strip()
+
+# Typo-tolerant name — same GIN index; word distance, lower is better
+filters.append(or_(Customer.name.ilike(pattern), literal(term).bool_op("<%")(Customer.name)))
+rank = literal(term).op("<<->", return_type=Float)(Customer.name)
+
+# Code prefix — B-tree on lower(code) text_pattern_ops
+filters.append(func.lower(Customer.code).like(f"{escape_like(term.lower())}%"))
+
+# Full-text — GIN on search_vector; higher is better, so sort it desc()
+q = func.websearch_to_tsquery("simple", term)
+filters.append(Customer.search_vector.bool_op("@@")(q))
+rank = func.ts_rank_cd(Customer.search_vector, q)
+```
+
+When the search is ranked, relevance is the default sort. Choosing a sort is query building, so
+it lives here, not in the route:
+
+```python
+if sort_by is None:
+    sort_by = "relevance" if rank is not None else "created_at"
+if sort_by == "relevance" and rank is not None:
+    order_clauses = [rank.asc(), Customer.id.desc()]      # .desc() for ts_rank_cd
 else:
-    sort_col = sort_col_map.get(effective_sort_by, Model.created_at)
-    direction = sort_col.asc() if sort_order == 'asc' else sort_col.desc()
-    order_clauses = [direction, Model.id.desc()]   # tiebreaker always last
+    col = _SORT_COL_MAP.get(sort_by, Customer.created_at)
+    order_clauses = [col.asc() if sort_order == "asc" else col.desc(), Customer.id.desc()]
 ```
 
----
+The route and service stay unchanged: the route binds `Annotated[XListParams, Query()]`, the
+service passes `params` through.
 
-## 8. When to Apply Each Technique
+### 10.4 Index builds on a live table
 
-Use this table to match the search requirement to the correct infrastructure level.
+A plain `CREATE INDEX` blocks writes for the whole build. On a large table already in production,
+build it `CONCURRENTLY` — which cannot run in a transaction:
 
-| Requirement | Correct approach |
-|---|---|
-| Search by name/code on a small-to-medium table | `iLIKE '%term%'` — no index needed for small tables; add GIN trigram index as the table grows |
-| Typo-tolerant name/label search | `pg_trgm` GIN index + `iLIKE` |
-| Phone / digits substring lookup | Normalized column (`mobile_normalized`) + GIN trigram |
-| Multi-field search (name + email + phone) | GIN trigram on each column individually |
-| Long-form text with ranked results | Stored `tsvector` + GIN index + `ts_rank_cd` |
-| Mixed input (name OR phone OR code in one box) | Hybrid classifier — FTS + trigram + identifier branch |
-| Weighted field ranking (title ranks above body) | `setweight()` in `tsvector` generation |
-| Search result excerpts / highlighted snippets | `ts_headline()` — applied after pagination on the returned page only |
-| Semantic / intent search | `pgvector` — requires an embedding model at insert time |
-| Write-heavy table with trigram/FTS index | GiST index over GIN to reduce write overhead |
-
----
-
-## 9. Migration Checklist
-
-When adding a new entity that has a list endpoint with search:
-
-```
-[ ] 1. Add pg_trgm extension (once per DB):
-        CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-[ ] 2. Add FTS extension dependencies if using FTS:
-        (no extension needed — tsvector/tsquery are built-in)
-
-[ ] 3. Add generated columns (mobile_normalized, search_vector) to model.
-        Use GENERATED ALWAYS AS (...) STORED — not triggers.
-
-[ ] 4. Add B-tree index on FK columns (PostgreSQL does not auto-index FKs).
-
-[ ] 5. Add GIN trigram index on every text column used in iLIKE search.
-
-[ ] 6. Add GIN index on search_vector if FTS is used.
-
-[ ] 7. Add partial B-tree index for the most common non-deleted filter:
-        CREATE INDEX ix_table_active ON table (created_at DESC)
-            WHERE is_deleted = false;
-
-[ ] 8. Add B-tree indexes on enum/status columns filtered in most queries.
-
-[ ] 9. Run EXPLAIN (ANALYZE, BUFFERS) on a representative query with real data
-        to verify the planner uses the indexes.
-
-[ ] 10. Use CREATE INDEX CONCURRENTLY in production migrations on tables
-         > 100 k rows. Plain CREATE INDEX takes an ACCESS EXCLUSIVE lock
-         and blocks writes for the full build duration.
-
-[ ] 11. Set pg_trgm.similarity_threshold = 0.3 (default is fine for most apps).
-         Lower → more results (noisier); higher → fewer results (stricter).
-
-[ ] 12. For FTS endpoints: explicitly choose configuration ('simple' vs
-         'english' — see §4.1) and query parser (websearch_to_tsquery for
-         all user-facing endpoints — see §4.2). Document the choice.
+```python
+with op.get_context().autocommit_block():   # commits everything before it
+    op.create_index(..., postgresql_concurrently=True)
 ```
 
----
+A failed concurrent build leaves an `INVALID` index that still slows writes: drop it and retry.
+GIN builds are sensitive to `maintenance_work_mem`.
 
-## 10. Anti-Patterns to Avoid
+## 11. Rules for every search
 
-| Anti-pattern | Problem | Fix |
-|---|---|---|
-| `iLIKE '%term%'` without a GIN index on a large table | Full sequential scan on every request | Add `GIN (lower(col) gin_trgm_ops)` |
-| FTS with `'english'` config on a names/codes column | Stop-word removal silently drops tokens ("The", "On") | Use `'simple'` config for proper nouns and identifiers |
-| Calling `to_tsquery(user_input)` from an HTTP endpoint | Raises on bad syntax; injection-adjacent | Use `websearch_to_tsquery` — never raises, parameter-safe |
-| Filtering in Python after fetching results | Pagination totals are wrong; full table loaded | Move all predicates into SQLAlchemy `where()` |
-| `to_tsvector(col)` computed inline in query | Recomputed on every row, can't use index | Use stored `GENERATED ALWAYS AS` column |
-| String interpolation into `tsquery` | SQL injection | Use parameterised `func.websearch_to_tsquery('simple', :q)` |
-| Not escaping user input for iLIKE | `%` and `_` widen the match unexpectedly | Use `escape_like()` from `app.core.utils` |
-| Composite GIN index on unrelated columns | Large index, partial-key GIN lookups are not useful | GIN on individual columns; composite only for B-tree |
-| Using FTS for short names / codes | Stop-word removal can drop tokens; no fuzzy match | Use trigram for short strings |
-| Using trigram for long documents | High false-positive rate; large index | Use FTS for long-form text |
-| `ts_rank` instead of `ts_rank_cd` for multi-term queries | Ignores proximity — distant matches rank as high as clustered ones | Default to `ts_rank_cd` |
-| `ORDER BY similarity(col, term)` with GIN index | GIN doesn't support distance ordering | Switch to GiST when nearest-neighbour sort is needed |
-| `ts_headline` inside the `WHERE` or count window | Recomputes for every candidate row — very slow | Apply `ts_headline` only in the SELECT list, after pagination |
-| Plain `CREATE INDEX` on a live table > 100 k rows | `ACCESS EXCLUSIVE` lock blocks writes for the entire build | Use `CREATE INDEX CONCURRENTLY` |
-| Skipping tiebreaker in ORDER BY | Non-deterministic pagination with OFFSET | Always append `Model.id.desc()` last |
+1. **Search and filters in one `WHERE`, in one query.** Filtering in Python makes the total wrong.
+2. **`escape_like()` on every `LIKE` / `ILIKE` term.** Backslash is PostgreSQL's default escape.
+3. **Never format user input into SQL or tsquery text** — bind it.
+4. **The query's expression is the index's expression.** An index on `lower(code)` serves only
+   `lower(code) LIKE …`.
+5. **`ORDER BY` ends with `id`**, or pages repeat and skip rows.
+6. **Bound the term** with `max_length`.
+7. **Prove the index is usable, then let the planner choose.** On a test table, run
+   `SET enable_seqscan = off` and `EXPLAIN` — the index name must appear; if it does not, the query
+   and index expressions differ (rule 4). Without that setting the planner may still pick a
+   sequential scan when it estimates one is cheaper — on 60 000 short rows it did for `ILIKE`. That
+   is its call to make; judge speed with `EXPLAIN ANALYZE` on production-sized data.
+8. **After `pg_upgrade` to 18 or later** on an ICU or builtin collation provider, reindex the
+   full-text and trigram indexes.
 
----
+## Sources
 
-## Summary — One-Line Rules
-
-1.  **Short names / codes → GIN trigram + iLIKE.**
-2.  **Long text / ranked relevance → stored tsvector + GIN + `ts_rank_cd`.**
-3.  **FTS config: `'simple'` for names/codes, `'english'` for prose.**
-4.  **FTS query parser: `websearch_to_tsquery` for every user-facing endpoint.**
-5.  **Mixed input (name + phone + code) → classify input, route to correct path.**
-6.  **All filters + search in one WHERE clause — never post-filter in Python.**
-7.  **Generated columns for search targets — never computed inline.**
-8.  **GIN for reads; GiST only when `ORDER BY similarity()` or write throughput demands it.**
-9.  **Every FK column gets a B-tree index — PostgreSQL never auto-creates them.**
-10. **Partial indexes on `WHERE is_deleted = false` — smaller and faster for soft-delete tables.**
-11. **`CREATE INDEX CONCURRENTLY` on live tables.**
-12. **Escape all iLIKE input. `websearch_to_tsquery` is already safe.**
-13. **Always end ORDER BY with `model.id.desc()` — deterministic pagination.**
+- PostgreSQL 18 docs: [pg_trgm](https://www.postgresql.org/docs/current/pgtrgm.html) ·
+  [text search indexes](https://www.postgresql.org/docs/current/textsearch-indexes.html) ·
+  [text search tables](https://www.postgresql.org/docs/current/textsearch-tables.html) ·
+  [parsing and ranking](https://www.postgresql.org/docs/current/textsearch-controls.html) ·
+  [indexes](https://www.postgresql.org/docs/current/indexes.html) ·
+  [index types](https://www.postgresql.org/docs/current/indexes-types.html) ·
+  [multicolumn](https://www.postgresql.org/docs/current/indexes-multicolumn.html) ·
+  [partial](https://www.postgresql.org/docs/current/indexes-partial.html) ·
+  [operator classes](https://www.postgresql.org/docs/current/indexes-opclass.html) ·
+  [examining index usage](https://www.postgresql.org/docs/current/indexes-examine.html) ·
+  [foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html) ·
+  [GIN tips](https://www.postgresql.org/docs/current/gin.html) ·
+  [CREATE INDEX](https://www.postgresql.org/docs/current/sql-createindex.html) ·
+  [LIKE](https://www.postgresql.org/docs/current/functions-matching.html) ·
+  [index statistics](https://www.postgresql.org/docs/current/monitoring-stats.html) ·
+  [release 18](https://www.postgresql.org/docs/18/release-18.html)
+- [pgvector README](https://github.com/pgvector/pgvector) (0.8.7) — HNSW, filtering, hybrid search
+- [SQLAlchemy 2.0 PostgreSQL dialect](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html) —
+  `postgresql_ops`, `websearch_to_tsquery`, `match()`
+- [Alembic `autocommit_block`](https://alembic.sqlalchemy.org/en/latest/api/runtime.html)
+- [Supabase hybrid search](https://supabase.com/docs/guides/ai/hybrid-search) — Reciprocal Rank Fusion

@@ -48,6 +48,23 @@ docs promised were fixed in code; two that need a product decision are recorded,
   seed that "defines all roles" (the catalogue does), a `user/seed.py` and `get_current_active_user`
   that do not exist, an `AUTH_EXPOSE_DEV_CODES` setting that does not exist, a "no worker
   healthcheck" gap that was closed, and a task-listing grep that missed `@db_task`.
+- **New `search-endpoint` skill.** It reads the model, asks only for what the code cannot show,
+  picks each field's search technique from the search guide, prepares the table and builds it.
+- **The search guide (`app/core/crud/docs/search-strategy.md`) is rewritten** from the PostgreSQL
+  18, pgvector, SQLAlchemy and Alembic docs, at half the length. It now starts from one default
+  (`ILIKE` plus a GIN trigram index per field) and names the reason for each step up, and adds
+  table preparation: what to index, and what not to until a measurement asks. Its examples were
+  run on PostgreSQL 16. Corrected along the way:
+  - `ILIKE 'term%'` cannot use a plain B-tree; a prefix search needs `lower(col) text_pattern_ops`.
+  - A trigram index on the plain column already serves `ILIKE`; the `lower()` index was redundant.
+  - `similarity(a, b) > 0.3` never uses the index; the `%` / `<%` operators do.
+  - `%` scores a short term against a long value too low; `<%` is the search-box operator.
+  - Full-text ranks were added to trigram scores, which are on another scale; results are now
+    ordered in tiers.
+  - Trigram typo tolerance forgives one letter in a longer word, not a swap in a short one ("jhon"
+    scores 0.20 against "John").
+  - The default sort was chosen in the route, which `CLAUDE.md` §2 forbids; it is now chosen in
+    CRUD.
 - **Recorded in `.claude/rules/permissions.md` → Known gaps, not changed:** 18 admin routes gate on
   `SuperUserDep` rather than a permission, so 17 of 18 catalogue permissions gate nothing; and no
   auth route has a throttle.

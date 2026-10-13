@@ -389,4 +389,5 @@ on `XxxListParams.sort_by` instead — the rejection happens before CRUD runs.
 
 For search technique selection (iLIKE vs trigram vs FTS vs hybrid), indexing
 strategy, and filter+search sync rules, see
-[docs/search-strategy.md](./docs/search-strategy.md).
+[docs/search-strategy.md](./docs/search-strategy.md). To build one step by step, use the
+`search-endpoint` skill.
